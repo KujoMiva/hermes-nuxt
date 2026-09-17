@@ -1,0 +1,514 @@
+import type { ChatApproval, ChatStatus, ChatStopKind, ChatThreadMessage } from '~/types/hermes'
+import { chatUid } from '~/utils/chatRun'
+import { isGenericModel } from '~/composables/useModelCatalog'
+
+let eventsBound = false
+let historyLoad = 0
+
+export function usePendingPrompt() {
+  return useState<{ text: string, images: string[] } | null>('hermes-pending-prompt', () => null)
+}
+
+function asSessionModel(id?: string | null) {
+  const value = id?.trim() || ''
+  return isGenericModel(value) ? '' : value
+}
+
+function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result || '')
+      const comma = result.indexOf(',')
+      resolve(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.onerror = () => reject(new Error('无法读取图片'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function mapHistoryMessages(raw: unknown[]): ChatThreadMessage[] {
+  const rows: ChatThreadMessage[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const rec = item as Record<string, unknown>
+    const role = rec.role
+    const createdAt = typeof rec.timestamp === 'number'
+      ? (rec.timestamp > 1e12 ? rec.timestamp : rec.timestamp * 1000)
+      : Date.now()
+
+    if (role === 'tool') {
+      const last = rows.at(-1)
+      const tool = {
+        id: chatUid('tool'),
+        name: String(rec.name || 'tool'),
+        status: 'completed' as const,
+        preview: String(rec.context || rec.text || ''),
+        args: rec.args,
+        startedAt: createdAt,
+        endedAt: createdAt
+      }
+      if (last?.role === 'assistant') {
+        last.tools = [...(last.tools || []), tool]
+      }
+      continue
+    }
+
+    if (role !== 'user' && role !== 'assistant' && role !== 'system') continue
+    rows.push({
+      id: String(rec.row_id || chatUid(role === 'user' ? 'u' : 'a')),
+      role,
+      content: String(rec.text || rec.content || ''),
+      reasoning: String(rec.reasoning || rec.reasoning_content || ''),
+      tools: [],
+      createdAt
+    })
+  }
+  return rows
+}
+
+export function useChatController() {
+  const gateway = useGateway()
+  const { model, provider, reasoningEffort, isConfigured } = useConnection()
+  const catalog = useModelCatalog()
+  const sessions = useSessions()
+  const toast = useToast()
+
+  const sessionId = useState('hermes-active-session', () => '')
+  const storedSessionId = useState('hermes-stored-session', () => '')
+  const sessionModel = useState('hermes-session-model', () => '')
+  const sessionProvider = useState('hermes-session-provider', () => '')
+  const messages = useState<ChatThreadMessage[]>('hermes-messages', () => [])
+  const status = useState<ChatStatus>('hermes-chat-status', () => 'ready')
+  const errorText = useState('hermes-chat-error', () => '')
+  const approval = useState<ChatApproval | null>('hermes-approval', () => null)
+  const pendingSteer = useState('hermes-pending-steer', () => '')
+  const pendingApproval = useState<ChatApproval | null>('hermes-pending-approval', () => null)
+  const loadingHistory = useState('hermes-history-loading', () => false)
+  const liveHint = useState('hermes-live-hint', () => '')
+  const userStopped = useState('hermes-user-stopped', () => false)
+  const turnStopKind = useState<ChatStopKind | ''>('hermes-turn-stop-kind', () => '')
+  const assistantId = useState('hermes-assistant-id', () => '')
+
+  const busy = computed(() => status.value === 'submitted' || status.value === 'streaming')
+  const stopping = computed(() => userStopped.value && busy.value)
+  const thread = computed(() => messages.value)
+
+  const activeModel = computed(() => asSessionModel(sessionModel.value) || asSessionModel(model.value))
+  const activeProvider = computed(() => sessionProvider.value.trim() || provider.value.trim())
+
+  function inferProvider(modelId: string) {
+    for (const group of catalog.providers.value) {
+      if ((group.models || []).some(item => item.id === modelId)) return group.id
+    }
+    return ''
+  }
+
+  function applySessionSelection(nextModel = '', nextProvider = '') {
+    sessionModel.value = asSessionModel(nextModel)
+    sessionProvider.value = nextProvider.trim()
+    if (sessionModel.value && !sessionProvider.value) {
+      sessionProvider.value = inferProvider(sessionModel.value)
+    }
+  }
+
+  function sameSession(eventSession?: string) {
+    if (!eventSession || !sessionId.value) return true
+    return eventSession === sessionId.value || eventSession === storedSessionId.value
+  }
+
+  function isActiveId(id?: string | null) {
+    const value = id?.trim() || ''
+    if (!value) return false
+    return value === sessionId.value || value === storedSessionId.value
+  }
+
+  function appendAssistant() {
+    const message: ChatThreadMessage = {
+      id: chatUid('asst'),
+      role: 'assistant',
+      content: '',
+      tools: [],
+      streaming: true,
+      createdAt: Date.now()
+    }
+    messages.value = [...messages.value, message]
+    assistantId.value = message.id
+    return message
+  }
+
+  function patchAssistant(id: string, patch: Partial<ChatThreadMessage>) {
+    messages.value = messages.value.map(item => item.id === id ? { ...item, ...patch } : item)
+  }
+
+  function bindEvents() {
+    if (eventsBound || !import.meta.client) return
+    eventsBound = true
+
+    gateway.on('message.start', (event) => {
+      if (!sameSession(event.session_id)) return
+      status.value = 'streaming'
+      userStopped.value = false
+      turnStopKind.value = ''
+      appendAssistant()
+    })
+
+    gateway.on<{ text?: string }>('message.delta', (event) => {
+      if (!sameSession(event.session_id)) return
+      const text = event.payload?.text
+      if (typeof text !== 'string' || !text) return
+      status.value = 'streaming'
+      const current = messages.value.find(item => item.id === assistantId.value)
+      if (current) {
+        patchAssistant(current.id, { content: current.content + text, streaming: true })
+      } else {
+        const created = appendAssistant()
+        patchAssistant(created.id, { content: text, streaming: true })
+      }
+    })
+
+    gateway.on<{ text?: string, error?: string, status?: string }>('message.complete', (event) => {
+      if (!sameSession(event.session_id)) return
+      status.value = 'ready'
+      const current = messages.value.find(item => item.id === assistantId.value)
+      if (current) {
+        const text = typeof event.payload?.text === 'string' && event.payload.text
+          ? event.payload.text
+          : current.content
+        patchAssistant(current.id, {
+          content: text,
+          streaming: false,
+          tools: (current.tools || []).map(tool => (
+            tool.status === 'running'
+              ? { ...tool, status: 'completed' as const, endedAt: Date.now() }
+              : tool
+          )),
+          stopKind: userStopped.value ? 'user_stop' : undefined
+        })
+      }
+      if (event.payload?.status === 'error' && event.payload.error) {
+        errorText.value = event.payload.error
+      }
+      void sessions.refresh()
+    })
+
+    gateway.on<{ name?: string, summary?: string, context?: string, tool_id?: string }>('tool.start', (event) => {
+      if (!sameSession(event.session_id)) return
+      const current = messages.value.find(item => item.id === assistantId.value) || appendAssistant()
+      const tools = [...(current.tools || []), {
+        id: String(event.payload?.tool_id || chatUid('tool')),
+        name: event.payload?.name || 'tool',
+        status: 'running' as const,
+        preview: event.payload?.summary || event.payload?.context || '',
+        startedAt: Date.now()
+      }]
+      patchAssistant(current.id, { tools, streaming: true })
+    })
+
+    gateway.on<{ tool_id?: string, name?: string, summary?: string, result?: unknown }>('tool.complete', (event) => {
+      if (!sameSession(event.session_id)) return
+      const current = messages.value.find(item => item.id === assistantId.value)
+      if (!current?.tools?.length) return
+      const toolId = event.payload?.tool_id
+      const toolName = event.payload?.name
+      let matched = false
+      const tools = current.tools.map((tool) => {
+        if (matched || tool.status !== 'running') return tool
+        if (toolId && tool.id !== String(toolId) && tool.name !== toolName) return tool
+        if (!toolId && toolName && tool.name !== toolName) return tool
+        matched = true
+        return {
+          ...tool,
+          status: 'completed' as const,
+          preview: event.payload?.summary || tool.preview,
+          endedAt: Date.now()
+        }
+      })
+      patchAssistant(current.id, { tools })
+    })
+
+    gateway.on<{ text?: string }>('reasoning.available', (event) => {
+      if (!sameSession(event.session_id)) return
+      const text = event.payload?.text
+      if (typeof text !== 'string' || !text) return
+      const current = messages.value.find(item => item.id === assistantId.value) || appendAssistant()
+      patchAssistant(current.id, { reasoning: text, streaming: true })
+    })
+
+    gateway.on<{ text?: string, already_streamed?: boolean }>('message.interim', (event) => {
+      if (!sameSession(event.session_id)) return
+      if (event.payload?.already_streamed) return
+      const text = event.payload?.text
+      if (typeof text !== 'string' || !text) return
+      const current = messages.value.find(item => item.id === assistantId.value) || appendAssistant()
+      patchAssistant(current.id, { content: text, streaming: true })
+    })
+
+    gateway.on<ChatApproval>('approval.request', (event) => {
+      if (!sameSession(event.session_id)) return
+      approval.value = event.payload || null
+    })
+
+    gateway.on<{ session_id?: string, title?: string }>('session.title', (event) => {
+      const id = event.payload?.session_id || event.session_id || storedSessionId.value
+      if (!id) return
+      const title = event.payload?.title
+      if (title) sessions.upsert({ id, title })
+    })
+  }
+
+  async function ensureDraft() {
+    if (sessionId.value) return sessionId.value
+    const created = await gateway.request<{ session_id: string, stored_session_id?: string, info?: { model?: string, provider?: string } }>('session.create', {
+      source: 'webui',
+      close_on_disconnect: false,
+      ...(activeModel.value ? { model: activeModel.value } : {}),
+      ...(activeProvider.value ? { provider: activeProvider.value } : {}),
+      ...(reasoningEffort.value ? { reasoning: reasoningEffort.value } : {})
+    })
+    sessionId.value = created.session_id
+    storedSessionId.value = created.stored_session_id || created.session_id
+    if (created.info?.model) applySessionSelection(created.info.model, created.info.provider || '')
+    return sessionId.value
+  }
+
+  async function loadSession(id: string) {
+    const token = ++historyLoad
+    sessionId.value = ''
+    storedSessionId.value = id
+    messages.value = []
+    approval.value = null
+    pendingSteer.value = ''
+    errorText.value = ''
+    liveHint.value = ''
+    status.value = 'ready'
+    loadingHistory.value = true
+    bindEvents()
+    try {
+      await gateway.ensureConnected()
+      const resumed = await gateway.request<{
+        session_id?: string
+        session_key?: string
+        messages?: unknown[]
+        running?: boolean
+        info?: { model?: string, provider?: string }
+        pending_approval?: ChatApproval
+      }>('session.resume', { session_id: id })
+      if (token !== historyLoad) return
+      sessionId.value = resumed.session_id || id
+      storedSessionId.value = resumed.session_key || id
+      messages.value = mapHistoryMessages(resumed.messages || [])
+      if (resumed.info?.model) applySessionSelection(resumed.info.model, resumed.info.provider || '')
+      if (resumed.pending_approval) approval.value = resumed.pending_approval
+      if (resumed.running) {
+        status.value = 'streaming'
+        const last = messages.value.at(-1)
+        if (last?.role === 'assistant') {
+          assistantId.value = last.id
+          patchAssistant(last.id, { streaming: true })
+        }
+      }
+    } catch (error) {
+      if (token !== historyLoad) return
+      errorText.value = error instanceof Error ? error.message : '无法加载会话'
+    } finally {
+      if (token === historyLoad) loadingHistory.value = false
+    }
+  }
+
+  async function resumeIfActive(id: string) {
+    if (sessionId.value === id || storedSessionId.value === id) return
+    await loadSession(id)
+  }
+
+  async function attachImage(file: File, onProgress?: (progress: { percent: number, loaded: number, total: number }) => void) {
+    const sid = await ensureDraft()
+    onProgress?.({ percent: 30, loaded: 0, total: file.size })
+    const content_base64 = await fileToBase64(file)
+    onProgress?.({ percent: 70, loaded: file.size, total: file.size })
+    await gateway.request('image.attach_bytes', {
+      session_id: sid,
+      content_base64,
+      filename: file.name
+    })
+    onProgress?.({ percent: 100, loaded: file.size, total: file.size })
+    return { ref: file.name }
+  }
+
+  async function send(text: string, _images: string[] = []) {
+    if (!isConfigured.value) {
+      await navigateTo('/login')
+      return
+    }
+    const trimmed = text.trim()
+    if (!trimmed && !_images.length) return
+    errorText.value = ''
+    userStopped.value = false
+    turnStopKind.value = ''
+    const sid = await ensureDraft()
+    if (trimmed) {
+      messages.value = [...messages.value, {
+        id: chatUid('u'),
+        role: 'user',
+        content: trimmed,
+        createdAt: Date.now()
+      }]
+    }
+    status.value = 'submitted'
+    bindEvents()
+    try {
+      await gateway.request('prompt.submit', { session_id: sid, text: trimmed })
+      const route = useRoute()
+      const stored = storedSessionId.value
+      if (stored && route.path === '/') {
+        await sessions.refresh()
+        await navigateTo(`/chat/${stored}`)
+      }
+    } catch (error) {
+      status.value = 'ready'
+      errorText.value = error instanceof Error ? error.message : '发送失败'
+    }
+  }
+
+  async function steer(text: string) {
+    const sid = sessionId.value
+    if (!sid || !text.trim()) return
+    pendingSteer.value = text.trim()
+    try {
+      await gateway.request('session.steer', { session_id: sid, text: text.trim() })
+    } catch (error) {
+      pendingSteer.value = ''
+      toast.add({
+        title: '无法发送引导',
+        description: error instanceof Error ? error.message : String(error),
+        color: 'error'
+      })
+    }
+  }
+
+  function clearPendingSteer() {
+    const text = pendingSteer.value
+    pendingSteer.value = ''
+    return text
+  }
+
+  async function stop() {
+    const sid = sessionId.value
+    if (!sid) return
+    userStopped.value = true
+    turnStopKind.value = 'stopping'
+    try {
+      await gateway.request('session.interrupt', { session_id: sid })
+    } catch (error) {
+      toast.add({
+        title: '无法停止',
+        description: error instanceof Error ? error.message : String(error),
+        color: 'error'
+      })
+    }
+  }
+
+  async function resolveApproval(choice: string) {
+    const sid = sessionId.value
+    if (!sid || !approval.value) return
+    pendingApproval.value = approval.value
+    try {
+      await gateway.request('approval.respond', {
+        session_id: sid,
+        choice,
+        request_id: approval.value.request_id
+      })
+      approval.value = null
+    } catch (error) {
+      toast.add({
+        title: '无法处理审批',
+        description: error instanceof Error ? error.message : String(error),
+        color: 'error'
+      })
+    } finally {
+      pendingApproval.value = null
+    }
+  }
+
+  async function setSessionModel(nextModel: string, nextProvider = '') {
+    applySessionSelection(nextModel, nextProvider)
+    model.value = sessionModel.value
+    provider.value = sessionProvider.value
+    if (!sessionId.value) return
+    try {
+      await gateway.request('config.set', {
+        key: 'model',
+        value: sessionModel.value,
+        session_id: sessionId.value,
+        ...(sessionProvider.value ? { provider: sessionProvider.value } : {})
+      })
+    } catch (error) {
+      toast.add({
+        title: '无法切换会话模型',
+        description: error instanceof Error ? error.message : String(error),
+        color: 'error'
+      })
+    }
+  }
+
+  async function persistRuntimeOptions() {
+    if (!sessionId.value || !reasoningEffort.value) return
+    try {
+      await gateway.request('config.set', {
+        key: 'reasoning',
+        value: reasoningEffort.value,
+        session_id: sessionId.value
+      })
+    } catch {
+      // older gateways may not accept this key
+    }
+  }
+
+  function resetLocal() {
+    historyLoad += 1
+    sessionId.value = ''
+    storedSessionId.value = ''
+    messages.value = []
+    approval.value = null
+    pendingSteer.value = ''
+    errorText.value = ''
+    liveHint.value = ''
+    status.value = 'ready'
+    assistantId.value = ''
+    userStopped.value = false
+    turnStopKind.value = ''
+  }
+
+  if (import.meta.client) bindEvents()
+
+  return {
+    activeModel,
+    activeProvider,
+    approval,
+    attachImage,
+    busy,
+    clearPendingSteer,
+    errorText,
+    isActiveId,
+    liveHint,
+    loadSession,
+    loadingHistory,
+    messages: thread,
+    pendingApproval,
+    pendingSteer,
+    persistRuntimeOptions,
+    resetLocal,
+    resolveApproval,
+    resumeIfActive,
+    send,
+    sessionId,
+    sessionModel,
+    sessionProvider,
+    setSessionModel,
+    status,
+    steer,
+    stop,
+    stopping,
+    storedSessionId
+  }
+}

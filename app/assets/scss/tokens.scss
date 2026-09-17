@@ -1,0 +1,56 @@
+:root {
+  --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+
+  --color-bg: #fafaf9;
+  --color-surface: #ffffff;
+  --color-elevated: #ededed;
+  --color-accented: #e4e4e6;
+  --color-inverted: #171717;
+  --color-text: #3f3f46;
+  --color-text-muted: #7d899c;
+  --color-text-dimmed: #9aa3ad;
+  --color-text-toned: #3a3a3e;
+  --color-text-strong: #161616;
+  --color-text-invert: #ffffff;
+  --color-border: #e9e9eb;
+  --color-border-muted: #efefef;
+  --color-success: #16a34a;
+  --color-success-bg: rgb(22 163 74 / 12%);
+  --color-error: #dc2626;
+  --color-error-bg: rgb(220 38 38 / 10%);
+  --color-warning: #d97706;
+  --color-warning-bg: rgb(217 119 6 / 12%);
+
+  --radius: 1rem;
+  --radius-sm: 0.75rem;
+  --radius-xs: 0.5rem;
+  --radius-pill: 999px;
+  --shadow: 0 1px 2px rgb(15 15 20 / 5%);
+  --shadow-composer: 0 1px 4px rgb(15 15 20 / 4%);
+  --navbar-height: 3.6rem;
+}
+
+.dark {
+  --color-bg: #141416;
+  --color-surface: #1c1c1f;
+  --color-elevated: #27272a;
+  --color-accented: #3f3f46;
+  --color-inverted: #fafafa;
+  --color-text: #e4e4e7;
+  --color-text-muted: #a1a1aa;
+  --color-text-dimmed: #71717a;
+  --color-text-toned: #d4d4d8;
+  --color-text-strong: #fafafa;
+  --color-text-invert: #18181b;
+  --color-border: #2a2a2e;
+  --color-border-muted: #222226;
+  --color-success: #4ade80;
+  --color-success-bg: rgb(74 222 128 / 14%);
+  --color-error: #f87171;
+  --color-error-bg: rgb(248 113 113 / 14%);
+  --color-warning: #fbbf24;
+  --color-warning-bg: rgb(251 191 36 / 14%);
+  --shadow: 0 1px 2px rgb(0 0 0 / 28%);
+  --shadow-composer: 0 1px 4px rgb(0 0 0 / 24%);
+}

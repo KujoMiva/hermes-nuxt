@@ -1,0 +1,24 @@
+{
+  "name": "hermes-nuxt",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "dev": "nuxt dev --host 127.0.0.1 --port 3000",
+    "build": "nuxt build",
+    "preview": "nuxt preview --host 127.0.0.1 --port 3000",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.133",
+    "@nuxt/icon": "^2.5.1",
+    "isomorphic-dompurify": "^4.2.0",
+    "katex": "^0.18.7",
+    "nuxt": "^4.1.2",
+    "vue": "^3.5.21",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "sass-embedded": "^1.104.1"
+  }
+}

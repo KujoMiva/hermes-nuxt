@@ -1,0 +1,251 @@
+import type { ChatThreadMessage, ChatToolEvent, HermesMessage } from '~/types/hermes'
+import { extractImages, extractText } from './format'
+import { extractImageRefs } from './imageRefs'
+import { chatUid } from './chatRun'
+
+/** 远程网关一次 history 足够长；分页只是兼容旧调用。 */
+export const SESSION_MESSAGE_PAGE = 500
+const SESSION_MESSAGE_CAP = 8000
+
+type HermesRequest = <T = unknown>(
+  path: string,
+  options?: {
+    query?: Record<string, string | number | boolean | undefined>
+    extraHeaders?: Record<string, string>
+  }
+) => Promise<T>
+
+export async function fetchAllSessionMessages(
+  request: HermesRequest,
+  sessionId: string,
+  extraHeaders?: Record<string, string>
+) {
+  const rows: HermesMessage[] = []
+  let offset = 0
+
+  while (offset < SESSION_MESSAGE_CAP) {
+    const payload = await request<{ data?: HermesMessage[] }>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
+      {
+        query: {
+          limit: SESSION_MESSAGE_PAGE,
+          offset,
+          order: 'oldest'
+        },
+        extraHeaders
+      }
+    )
+    const batch = payload.data || []
+    rows.push(...batch)
+    if (batch.length < SESSION_MESSAGE_PAGE) break
+    offset += SESSION_MESSAGE_PAGE
+  }
+
+  return rows
+}
+
+export function mapSessionMessage(message: HermesMessage): ChatThreadMessage | null {
+  if (message.role === 'tool') return null
+  const role = message.role === 'system' ? 'system' : message.role
+  if (role !== 'user' && role !== 'assistant' && role !== 'system') return null
+
+  const createdAt = message.timestamp
+    ? new Date(typeof message.timestamp === 'number'
+        ? (message.timestamp > 1e12 ? message.timestamp : message.timestamp * 1000)
+        : message.timestamp).getTime()
+    : Date.now()
+
+  const tools: ChatToolEvent[] = (message.tool_calls || []).map((call, index) => ({
+    id: call.id || `${message.id || 'tool'}-${index}`,
+    name: call.function?.name || call.name || 'tool',
+    status: 'completed' as const,
+    args: call.function?.arguments || call.arguments,
+    startedAt: createdAt
+  }))
+
+  const rawContent = extractText(message.content)
+  const imageRefs = role === 'user'
+    ? extractImageRefs(rawContent)
+    : { cleanedText: rawContent, refs: [] as string[] }
+
+  return {
+    id: String(message.id || chatUid()),
+    role,
+    content: imageRefs.cleanedText,
+    images: [...new Set([...extractImages(message.content), ...imageRefs.refs])],
+    reasoning: message.reasoning || message.reasoning_content || '',
+    tools,
+    createdAt
+  }
+}
+
+function hasVisibleBody(message: ChatThreadMessage) {
+  return Boolean(
+    message.content?.trim()
+    || message.streaming
+    || message.images?.length
+    || message.stopKind
+  )
+}
+
+function thinkingEvent(message: ChatThreadMessage): ChatToolEvent | null {
+  const preview = message.reasoning?.trim()
+  if (!preview) return null
+  return {
+    id: `think_${message.id}`,
+    name: 'thinking',
+    kind: 'thinking',
+    status: message.streaming ? 'running' : 'completed',
+    preview,
+    startedAt: message.createdAt
+  }
+}
+
+function runEventsFrom(message: ChatThreadMessage) {
+  const existing = message.tools || []
+  const thinking = thinkingEvent(message)
+  if (!thinking) return existing
+  if (existing.some(item => item.kind === 'thinking')) return existing
+  return [thinking, ...existing]
+}
+
+function sameStrings(left?: string[], right?: string[]) {
+  if (left === right) return true
+  if (!left?.length && !right?.length) return true
+  if (!left || !right || left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false
+  }
+  return true
+}
+
+function sameTool(left: ChatToolEvent, right: ChatToolEvent) {
+  return left === right
+    || (
+      left.id === right.id
+      && left.name === right.name
+      && left.status === right.status
+      && left.kind === right.kind
+      && left.preview === right.preview
+      && left.summary === right.summary
+      && left.goal === right.goal
+      && left.childSessionId === right.childSessionId
+      && left.taskIndex === right.taskIndex
+      && left.taskCount === right.taskCount
+    )
+}
+
+function sameTools(left?: ChatToolEvent[], right?: ChatToolEvent[]) {
+  if (left === right) return true
+  if (!left?.length && !right?.length) return true
+  if (!left || !right || left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index]
+    const b = right[index]
+    if (!a || !b || !sameTool(a, b)) return false
+  }
+  return true
+}
+
+function sameFoldedMessage(left: ChatThreadMessage, right: ChatThreadMessage) {
+  return left.role === right.role
+    && left.content === right.content
+    && left.streaming === right.streaming
+    && left.stopKind === right.stopKind
+    && left.createdAt === right.createdAt
+    && sameStrings(left.images, right.images)
+    && sameTools(left.tools, right.tools)
+}
+
+export function reuseFoldedMessages(previous: ChatThreadMessage[], next: ChatThreadMessage[]) {
+  if (!previous.length || previous === next) return next
+  const prevById = new Map<string, ChatThreadMessage>()
+  for (const row of previous) prevById.set(row.id, row)
+  let changed = previous.length !== next.length
+  const out = next.map((row, index) => {
+    const prev = prevById.get(row.id)
+    if (prev && sameFoldedMessage(prev, row)) {
+      if (prev !== previous[index]) changed = true
+      return prev
+    }
+    changed = true
+    return row
+  })
+  return changed ? out : previous
+}
+
+export function chatBubbleMemo(message: ChatThreadMessage) {
+  const tools = message.tools
+  let toolKey = ''
+  if (tools?.length) {
+    for (const tool of tools) {
+      toolKey += `${tool.id}\0${tool.status}\0${tool.kind || ''}\0${tool.preview || ''}\0${tool.summary || ''}\0${tool.goal || ''}\n`
+    }
+  }
+  return [
+    message.content,
+    message.streaming ? 1 : 0,
+    message.stopKind || '',
+    message.images?.join('\0') || '',
+    toolKey
+  ]
+}
+
+export function foldTurnTools(messages: ChatThreadMessage[]) {
+  const out: ChatThreadMessage[] = []
+  let bucket: ChatThreadMessage[] = []
+
+  function flushBucket() {
+    const events: ChatToolEvent[] = []
+    const kept: ChatThreadMessage[] = []
+
+    for (const message of bucket) {
+      if (message.role !== 'assistant') {
+        kept.push(message)
+        continue
+      }
+      events.push(...runEventsFrom(message))
+      if (hasVisibleBody(message)) kept.push({ ...message, tools: [], reasoning: '' })
+    }
+
+    if (events.length) {
+      let last = -1
+      for (let index = kept.length - 1; index >= 0; index -= 1) {
+        if (kept[index]?.role === 'assistant') {
+          last = index
+          break
+        }
+      }
+      if (last >= 0) {
+        const target = kept[last]
+        if (target) kept[last] = { ...target, tools: events }
+      } else {
+        const first = events[0]
+        if (first) {
+          kept.push({
+            id: `tools_${first.id}`,
+            role: 'assistant',
+            content: '',
+            tools: events,
+            createdAt: first.startedAt || Date.now()
+          })
+        }
+      }
+    }
+
+    out.push(...kept)
+    bucket = []
+  }
+
+  for (const message of messages) {
+    if (message.role === 'user') {
+      flushBucket()
+      out.push(message)
+      continue
+    }
+    bucket.push(message)
+  }
+
+  flushBucket()
+  return out
+}
