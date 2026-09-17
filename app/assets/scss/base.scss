@@ -71,3 +71,19 @@ pre {
 :focus-visible {
   @include focus-ring;
 }
+
+.icon-well {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-elevated);
+  color: var(--color-text-toned);
+}
+
+.safe-bottom {
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+}
