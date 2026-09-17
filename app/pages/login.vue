@@ -7,7 +7,7 @@ definePageMeta({
   layout: false
 })
 
-const { logout, refresh, session } = useSessionInfo()
+const { session } = useSessionInfo()
 const route = useRoute()
 
 const remoteUrl = ref('')
@@ -174,10 +174,6 @@ function fetchErrorMessage(caught: unknown): string {
   }
   return record.data?.statusMessage || record.data?.message || record.statusMessage || record.message || '登录失败'
 }
-
-onMounted(async () => {
-  await refresh()
-})
 </script>
 
 <template>
@@ -321,34 +317,6 @@ onMounted(async () => {
           </p>
         </form>
       </UiCard>
-
-      <div
-        v-if="session.loggedIn"
-        class="login__saved"
-      >
-        <p class="login__saved-label">
-          当前会话
-        </p>
-        <div class="login__saved-item">
-          <button
-            type="button"
-            class="login__saved-main"
-            @click="navigateTo('/')"
-          >
-            <span class="login__saved-name">{{ session.host || '远程网关' }}</span>
-            <span class="login__saved-hint">已登录，进入聊天</span>
-          </button>
-          <UiButton
-            color="error"
-            variant="ghost"
-            size="xs"
-            square
-            icon="i-lucide-log-out"
-            aria-label="退出"
-            @click="logout"
-          />
-        </div>
-      </div>
     </div>
   </div>
 </template>
@@ -432,53 +400,5 @@ onMounted(async () => {
   &.is-on {
     visibility: visible;
   }
-}
-
-.login__saved {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  margin-top: 1rem;
-}
-
-.login__saved-label {
-  margin: 0 0.15rem;
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-}
-
-.login__saved-item {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 0.15rem;
-  border-radius: 1rem;
-  background: var(--color-surface);
-  box-shadow: var(--shadow);
-  padding: 0.35rem 0.35rem 0.35rem 0.9rem;
-}
-
-.login__saved-main {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.12rem;
-  border: 0;
-  background: transparent;
-  padding: 0.4rem 0.2rem 0.4rem 0;
-  text-align: start;
-}
-
-.login__saved-name {
-  color: var(--color-text-strong);
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.login__saved-hint {
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
 }
 </style>
