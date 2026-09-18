@@ -1,5 +1,5 @@
 import type { Capabilities, ConnectionConfig, ReasoningEffort } from '~/types/hermes'
-import { displayHermesEndpoint } from '~/utils/hermesEndpoint'
+import { gatewayHostLabel } from '#shared/utils/remote-url'
 
 const COOKIE_OPTS = {
   path: '/',
@@ -58,7 +58,7 @@ export function useConnection() {
   })
   const serverModel = computed(() => model.value)
   const capabilities = useState<Capabilities | null>('hermes-capabilities', () => null)
-  const endpointHref = computed(() => displayHermesEndpoint(baseUrl.value, profile.value))
+  const endpointHref = computed(() => baseUrl.value ? gatewayHostLabel(baseUrl.value) : '未配置')
 
   async function testConnection() {
     if (!isConfigured.value) {

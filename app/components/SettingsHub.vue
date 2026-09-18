@@ -6,8 +6,7 @@ const {
   connected,
   connecting,
   lastError,
-  baseUrl,
-  profile,
+  endpointHref,
   capabilities,
   testConnection,
   logout
@@ -42,7 +41,7 @@ onMounted(async () => {
   countsReady.value = true
 })
 
-const host = computed(() => displayHermesEndpoint(baseUrl.value, profile.value))
+const host = computed(() => endpointHref.value)
 const profileName = computed(() => profiles.currentName.value || 'Default')
 const hostMode = computed(() => {
   if (connecting.value) return '正在连接…'

@@ -5,7 +5,7 @@ import { groupChatSessions, visibleArchivedSessions } from '~/utils/sessionGroup
 const open = defineModel<boolean>('open', { default: false })
 const { collapsed } = useSidebarDisplay()
 const route = useRoute()
-const { connected, connecting, isConfigured, lastError, testConnection, baseUrl, profile } = useConnection()
+const { connected, connecting, isConfigured, lastError, testConnection, endpointHref, profile } = useConnection()
 const profiles = useProfiles()
 const avatars = useProfileAvatars()
 const sessions = useSessions()
@@ -74,7 +74,7 @@ function toggleWorkspace(id: string) {
   if (id === 'archive' && next) void sessions.loadArchived()
 }
 
-const host = computed(() => displayHermesEndpoint(baseUrl.value, profile.value))
+const host = computed(() => endpointHref.value)
 const workspaceName = computed(() => profile.value?.trim() || '会话')
 const currentProfile = computed(() => profiles.current.value)
 const profileName = computed(() => currentProfile.value?.name || 'Default')
