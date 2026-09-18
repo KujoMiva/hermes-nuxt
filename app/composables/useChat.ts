@@ -478,8 +478,8 @@ export function useChatController() {
       const last = sealed.at(-1)
       const next = last?.type === 'text'
         ? sealed.map((part, index) => index === sealed.length - 1 && part.type === 'text'
-          ? { ...part, text, live: false }
-          : part)
+            ? { ...part, text, live: false }
+            : part)
         : [...sealed, { type: 'text' as const, text, live: false }]
       patchParts(current, next, { streaming: true })
     })
