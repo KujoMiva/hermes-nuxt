@@ -8,10 +8,30 @@ const props = defineProps<{
   message: ChatThreadMessage
 }>()
 
+const chat = useChatController()
 const copied = ref(false)
+const editing = ref(false)
+const saving = ref(false)
+const confirmOpen = ref(false)
+const draft = ref('')
+const editorRef = ref<HTMLTextAreaElement | null>(null)
 const failed = ref<Record<string, boolean>>({})
 const stopLabel = computed(() => stopKindLabel(props.message.stopKind))
 const tools = computed(() => visibleTools(props.message.tools || []))
+const canEdit = computed(() => props.message.role === 'user' && Boolean(props.message.content?.trim()))
+const canCommit = computed(() => Boolean(draft.value.trim()) && draft.value.trim() !== props.message.content.trim())
+
+const hasLaterTurns = computed(() => {
+  const index = chat.messages.value.findIndex(item => item.id === props.message.id)
+  if (index < 0) return false
+  return index < chat.messages.value.length - 1 || chat.busy.value
+})
+
+function hasTextSelection() {
+  if (!import.meta.client) return false
+  const selection = window.getSelection()
+  return Boolean(selection && !selection.isCollapsed && selection.toString().length > 0)
+}
 
 async function copy() {
   await navigator.clipboard.writeText(props.message.content || '')
@@ -23,6 +43,73 @@ async function copy() {
 
 function srcOf(ref: string) {
   return chatMediaSrc(ref)
+}
+
+function syncEditorHeight() {
+  const el = editorRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
+async function startEdit() {
+  if (!canEdit.value || editing.value || saving.value) return
+  if (hasTextSelection()) return
+  draft.value = props.message.content
+  editing.value = true
+  await nextTick()
+  const el = editorRef.value
+  if (!el) return
+  el.focus()
+  el.setSelectionRange(el.value.length, el.value.length)
+  syncEditorHeight()
+}
+
+function cancelEdit() {
+  if (saving.value) return
+  editing.value = false
+  confirmOpen.value = false
+  draft.value = props.message.content
+}
+
+function requestCommit() {
+  if (saving.value || !canCommit.value) {
+    if (!canCommit.value) cancelEdit()
+    return
+  }
+  if (hasLaterTurns.value) {
+    confirmOpen.value = true
+    return
+  }
+  void commitEdit()
+}
+
+async function commitEdit() {
+  const text = draft.value.trim()
+  if (!text || text === props.message.content.trim()) {
+    cancelEdit()
+    return
+  }
+  saving.value = true
+  confirmOpen.value = false
+  try {
+    await chat.editMessage(props.message.id, text)
+    editing.value = false
+  } finally {
+    saving.value = false
+  }
+}
+
+function onEditorKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    cancelEdit()
+    return
+  }
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    requestCommit()
+  }
 }
 </script>
 
@@ -60,11 +147,56 @@ function srcOf(ref: string) {
       </div>
 
       <div
-        v-if="message.role === 'user' && message.content"
+        v-if="message.role === 'user' && editing"
+        class="bubble__editor"
+      >
+        <textarea
+          ref="editorRef"
+          v-model="draft"
+          class="bubble__editor-input"
+          rows="1"
+          :disabled="saving"
+          @input="syncEditorHeight"
+          @keydown="onEditorKeydown"
+        />
+        <div class="bubble__editor-actions">
+          <UiButton
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            label="取消"
+            :disabled="saving"
+            @click="cancelEdit"
+          />
+          <UiButton
+            color="primary"
+            size="xs"
+            label="发送"
+            :loading="saving"
+            :disabled="!canCommit || saving"
+            @click="requestCommit"
+          />
+        </div>
+      </div>
+
+      <button
+        v-else-if="message.role === 'user' && message.content"
+        type="button"
         class="bubble__user"
+        aria-label="点击编辑消息"
+        @click="startEdit"
       >
         {{ message.content }}
-      </div>
+        <span
+          class="bubble__edit-icon"
+          aria-hidden="true"
+        >
+          <UiIcon
+            name="i-lucide-pencil"
+            :size="12"
+          />
+        </span>
+      </button>
 
       <div
         v-else-if="message.role !== 'user'"
@@ -119,6 +251,16 @@ function srcOf(ref: string) {
       </div>
     </div>
   </article>
+
+  <UiConfirm
+    v-model:open="confirmOpen"
+    title="重新生成之后的对话？"
+    description="修改这条消息会删除它之后的全部回复，并按新内容重新发送。"
+    confirm-label="重新发送"
+    :loading="saving"
+    @confirm="commitEdit"
+    @cancel="confirmOpen = false"
+  />
 </template>
 
 <style lang="scss" scoped>
@@ -178,15 +320,79 @@ function srcOf(ref: string) {
 }
 
 .bubble__user {
+  position: relative;
   max-width: 100%;
   min-width: 0;
+  border: 1px solid transparent;
   border-radius: 1.125rem;
   background: var(--color-elevated);
-  padding: 0.65rem 1rem;
+  padding: 0.65rem 1.85rem 0.65rem 1rem;
   color: var(--color-text-strong);
+  font: inherit;
   font-size: 0.875rem;
+  line-height: 1.45;
+  text-align: left;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--color-border);
+  }
+}
+
+.bubble__edit-icon {
+  position: absolute;
+  right: 0.45rem;
+  bottom: 0.4rem;
+  display: flex;
+  color: var(--color-text-muted);
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+
+  @media (hover: hover) and (pointer: fine) {
+    opacity: 0;
+  }
+}
+
+.bubble__user:hover .bubble__edit-icon,
+.bubble__user:focus-visible .bubble__edit-icon {
+  opacity: 1;
+}
+
+.bubble__editor {
+  display: flex;
+  width: min(100%, 28rem);
+  min-width: 12rem;
+  flex-direction: column;
+  gap: 0.45rem;
+  border: 1px solid var(--color-border);
+  border-radius: 1.125rem;
+  background: var(--color-elevated);
+  padding: 0.65rem 0.85rem 0.55rem;
+}
+
+.bubble__editor-input {
+  width: 100%;
+  min-height: 1.25rem;
+  max-height: 12rem;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-strong);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  outline: none;
+  overflow-y: auto;
+  resize: none;
+}
+
+.bubble__editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.25rem;
 }
 
 .bubble__assistant {

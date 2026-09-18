@@ -80,8 +80,17 @@ function readBody(req) {
 }
 
 let seq = 1
+let messageRowSeq = 2
 const now = () => Math.floor(Date.now() / 1000)
 const uid = (prefix) => `${prefix}-${seq++}`
+const nextRowId = () => ++messageRowSeq
+const generations = new Map()
+
+function bumpGeneration(runtimeId) {
+  const next = (generations.get(runtimeId) || 0) + 1
+  generations.set(runtimeId, next)
+  return next
+}
 
 const store = {
   profiles: [
@@ -197,8 +206,8 @@ store.sessions.push({
   source: 'webui',
   hidden: false,
   messages: [
-    { role: 'user', text: '你好', timestamp: now() - 120, row_id: 'm1' },
-    { role: 'assistant', text: '你好，这是远程网关控制台。', timestamp: now() - 118, row_id: 'm2' }
+    { role: 'user', text: '你好', timestamp: now() - 120, row_id: 1 },
+    { role: 'assistant', text: '你好，这是远程网关控制台。', timestamp: now() - 118, row_id: 2 }
   ]
 })
 
@@ -224,6 +233,56 @@ function findLive(id) {
     if (row.id === id) return { runtimeId, row }
   }
   return null
+}
+
+function asInt(value) {
+  if (typeof value === 'number' && Number.isInteger(value)) return value
+  if (typeof value === 'string' && /^-?\d+$/.test(value)) return Number(value)
+  return null
+}
+
+function isTruthy(value) {
+  return value === true || value === 1 || value === '1' || value === 'true'
+}
+
+function applyTruncate(messages, params) {
+  const rowId = asInt(params.truncate_before_row_id)
+  const ordinal = asInt(params.truncate_before_user_ordinal)
+  const messageId = typeof params.truncate_before_message_id === 'string'
+    ? params.truncate_before_message_id
+    : ''
+  const hasTarget = rowId != null || ordinal != null || Boolean(messageId)
+  if (!hasTarget) return messages
+  if (!isTruthy(params.confirm_truncate)) {
+    const error = new Error('truncation parameters require confirm_truncate=true')
+    error.code = 4029
+    throw error
+  }
+
+  const userIndices = []
+  messages.forEach((message, index) => {
+    if (message.role === 'user') userIndices.push(index)
+  })
+
+  let cut = -1
+  if (rowId != null) {
+    cut = messages.findIndex(message => message.role === 'user' && asInt(message.row_id) === rowId)
+  } else if (messageId) {
+    cut = messages.findIndex(message => (
+      message.role === 'user'
+      && (String(message.id || '') === messageId || String(message.message_id || '') === messageId)
+    ))
+  } else if (ordinal != null) {
+    cut = userIndices[ordinal] ?? -1
+  }
+
+  if (cut < 0) {
+    const error = new Error('stale truncation target')
+    error.code = 4018
+    throw error
+  }
+
+  return messages.slice(0, cut)
 }
 
 function rpcOk(send, frame, result) {
@@ -548,7 +607,14 @@ function handleRpc(frame, send) {
     return
   }
 
-  if (method === 'session.interrupt' || method === 'session.steer' || method === 'approval.respond') {
+  if (method === 'session.interrupt') {
+    const live = findLive(params.session_id)
+    if (live) bumpGeneration(live.runtimeId)
+    rpcOk(send, frame, { ok: true })
+    return
+  }
+
+  if (method === 'session.steer' || method === 'approval.respond') {
     rpcOk(send, frame, { ok: true })
     return
   }
@@ -565,15 +631,21 @@ function handleRpc(frame, send) {
       return
     }
     const text = String(params.text || '')
+    try {
+      live.row.messages = applyTruncate(live.row.messages || [], params)
+    } catch (error) {
+      rpcErr(send, frame, error.code || 4004, error.message)
+      return
+    }
     const reasoning = '先看一下项目里的配置文件，确认当前网关地址和模型入口。'
     const reply = `你好，这是远程网关回声：${text}`
-    live.row.messages.push({ role: 'user', text, timestamp: now(), row_id: uid('m') })
+    live.row.messages.push({ role: 'user', text, timestamp: now(), row_id: nextRowId() })
     live.row.messages.push({
       role: 'assistant',
       text: reply,
       reasoning,
       timestamp: now(),
-      row_id: uid('m')
+      row_id: nextRowId()
     })
     live.row.messages.push({
       role: 'tool',
@@ -581,7 +653,7 @@ function handleRpc(frame, send) {
       context: 'nuxt.config.ts',
       args: { path: 'nuxt.config.ts' },
       timestamp: now(),
-      row_id: uid('m')
+      row_id: nextRowId()
     })
     live.row.messages.push({
       role: 'tool',
@@ -589,7 +661,7 @@ function handleRpc(frame, send) {
       context: 'useChat',
       args: { query: 'useChat' },
       timestamp: now(),
-      row_id: uid('m')
+      row_id: nextRowId()
     })
     live.row.messages.push({
       role: 'tool',
@@ -597,7 +669,7 @@ function handleRpc(frame, send) {
       context: 'pnpm typecheck',
       args: { command: 'pnpm typecheck' },
       timestamp: now(),
-      row_id: uid('m')
+      row_id: nextRowId()
     })
     live.row.messages.push({
       role: 'tool',
@@ -605,7 +677,7 @@ function handleRpc(frame, send) {
       context: 'app/components/ThinkingDisclosure.vue',
       args: { path: 'app/components/ThinkingDisclosure.vue' },
       timestamp: now(),
-      row_id: uid('m')
+      row_id: nextRowId()
     })
     live.row.preview = reply
     live.row.message_count = live.row.messages.length
@@ -615,6 +687,7 @@ function handleRpc(frame, send) {
     rpcOk(send, frame, { status: 'streaming' })
 
     const sid = live.runtimeId
+    const gen = bumpGeneration(sid)
     const readId = uid('tool')
     const searchId = uid('tool')
     const termId = uid('tool')
@@ -682,7 +755,10 @@ function handleRpc(frame, send) {
     let delay = 0
     for (const step of steps) {
       delay += step.wait
-      setTimeout(() => emit(send, step.type, sid, step.payload), delay)
+      setTimeout(() => {
+        if (generations.get(sid) !== gen) return
+        emit(send, step.type, sid, step.payload)
+      }, delay)
     }
     return
   }

@@ -1,4 +1,5 @@
 import type { ChatThreadMessage, ChatToolEvent, HermesMessage } from '~/types/hermes'
+import { asRowId } from './chatEdit'
 import { extractImages, extractText } from './format'
 import { extractImageRefs } from './imageRefs'
 import { chatUid } from './chatRun'
@@ -68,9 +69,11 @@ export function mapSessionMessage(message: HermesMessage): ChatThreadMessage | n
     ? extractImageRefs(rawContent)
     : { cleanedText: rawContent, refs: [] as string[] }
 
+  const rowId = asRowId(message.id)
   return {
     id: String(message.id || chatUid()),
     role,
+    rowId,
     content: imageRefs.cleanedText,
     images: [...new Set([...extractImages(message.content), ...imageRefs.refs])],
     reasoning: message.reasoning || message.reasoning_content || '',

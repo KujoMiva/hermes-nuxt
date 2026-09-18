@@ -1,5 +1,14 @@
 import type { ChatApproval, ChatStatus, ChatStopKind, ChatThreadMessage, ChatToolEvent } from '~/types/hermes'
-import { chatUid } from '~/utils/chatRun'
+import {
+  applySurvivorRowIdMap,
+  asRowId,
+  freezeInterruptedMessages,
+  isSessionBusyError,
+  resolveDurableRowId,
+  truncateSubmitParams,
+  visibleUserOrdinal
+} from '~/utils/chatEdit'
+import { chatUid, sleep } from '~/utils/chatRun'
 import { isGenericModel } from '~/composables/useModelCatalog'
 import { isSubagentTool, isToolResultFailed } from '~/utils/toolRun'
 import {
@@ -66,9 +75,11 @@ function mapHistoryMessages(raw: unknown[]): ChatThreadMessage[] {
         })
       }
     }
+    const rowId = asRowId(rec.row_id)
     return {
-      id: String(rec.row_id || chatUid('a')),
+      id: String(rowId ?? rec.row_id ?? rec.id ?? chatUid('a')),
       role: 'assistant',
+      rowId,
       content: String(rec.text || rec.content || ''),
       reasoning: asReasoningText(rec.reasoning || rec.reasoning_content || rec.reasoning_details),
       tools: fromCalls,
@@ -121,9 +132,11 @@ function mapHistoryMessages(raw: unknown[]): ChatThreadMessage[] {
       continue
     }
 
+    const rowId = asRowId(rec.row_id)
     rows.push({
-      id: String(rec.row_id || chatUid(role === 'user' ? 'u' : 'a')),
+      id: String(rowId ?? rec.row_id ?? rec.id ?? chatUid(role === 'user' ? 'u' : 'a')),
       role,
+      rowId,
       content: String(rec.text || rec.content || ''),
       reasoning: asReasoningText(rec.reasoning || rec.reasoning_content),
       tools: [],
@@ -533,15 +546,119 @@ export function useChatController() {
     bindEvents()
     try {
       await gateway.request('prompt.submit', { session_id: sid, text: trimmed })
-      const route = useRoute()
-      const stored = storedSessionId.value
-      if (stored && route.path === '/') {
-        await sessions.refresh()
-        await navigateTo(`/chat/${stored}`)
-      }
+      await openStoredChat()
     } catch (error) {
       status.value = 'ready'
       errorText.value = error instanceof Error ? error.message : '发送失败'
+    }
+  }
+
+  async function openStoredChat() {
+    const route = useRoute()
+    const stored = storedSessionId.value
+    if (stored && route.path === '/') {
+      await sessions.refresh()
+      await navigateTo(`/chat/${stored}`)
+    }
+  }
+
+  async function interruptSession(sid: string) {
+    try {
+      await gateway.request('session.interrupt', { session_id: sid })
+    } catch {
+      // best-effort; submit still gates on gateway busy
+    }
+  }
+
+  async function submitPrompt(sid: string, text: string, extra: Record<string, unknown> = {}) {
+    const run = () => gateway.request<{ survivor_row_id_map?: unknown }>('prompt.submit', {
+      session_id: sid,
+      text,
+      ...extra
+    })
+    try {
+      return await run()
+    } catch (error) {
+      if (!isSessionBusyError(error)) throw error
+      await interruptSession(sid)
+      const deadline = Date.now() + 8_000
+      while (Date.now() < deadline) {
+        await sleep(200)
+        try {
+          return await run()
+        } catch (retryError) {
+          if (!isSessionBusyError(retryError) || Date.now() >= deadline) throw retryError
+        }
+      }
+      throw error
+    }
+  }
+
+  async function editMessage(id: string, text: string) {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    if (!isConfigured.value) {
+      await navigateTo('/login')
+      return
+    }
+
+    const index = messages.value.findIndex(item => item.id === id)
+    const source = messages.value[index]
+    if (!source || source.role !== 'user') return
+    if (source.content.trim() === trimmed) return
+
+    const snapshot = freezeInterruptedMessages(messages.value)
+    const sourceText = source.content.trim()
+    const expectedOrdinal = visibleUserOrdinal(messages.value, index)
+    const interruptFirst = busy.value
+    errorText.value = ''
+    userStopped.value = false
+    turnStopKind.value = ''
+    liveHint.value = ''
+    providerWait.value = ''
+    assistantId.value = ''
+    messages.value = [
+      ...messages.value.slice(0, index),
+      { ...source, content: trimmed, rowId: undefined }
+    ]
+    status.value = 'submitted'
+    bindEvents()
+
+    try {
+      const sid = await ensureDraft()
+      if (interruptFirst) await interruptSession(sid)
+
+      let rowId = source.rowId
+      if (typeof rowId !== 'number') {
+        rowId = await resolveDurableRowId(gateway.request, sid, sourceText, expectedOrdinal)
+      }
+
+      const trunc = truncateSubmitParams(rowId)
+      if (!Object.keys(trunc).length) {
+        let lastUser = -1
+        for (let i = snapshot.length - 1; i >= 0; i -= 1) {
+          if (snapshot[i]?.role === 'user') {
+            lastUser = i
+            break
+          }
+        }
+        if (index !== lastUser || index < snapshot.length - 1) {
+          throw new Error('无法定位这条消息，请刷新后再试')
+        }
+      }
+
+      const result = await submitPrompt(sid, trimmed, trunc)
+      messages.value = applySurvivorRowIdMap(messages.value, result?.survivor_row_id_map)
+      await openStoredChat()
+    } catch (error) {
+      messages.value = snapshot
+      status.value = 'ready'
+      errorText.value = error instanceof Error ? error.message : '无法编辑消息'
+      toast.add({
+        title: '无法编辑消息',
+        description: error instanceof Error ? error.message : String(error),
+        color: 'error'
+      })
     }
   }
 
@@ -664,6 +781,7 @@ export function useChatController() {
     attachImage,
     busy,
     clearPendingSteer,
+    editMessage,
     errorText,
     isActiveId,
     liveHint,

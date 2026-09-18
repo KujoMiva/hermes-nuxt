@@ -96,6 +96,8 @@ export type ChatStopKind = 'stopping' | 'user_stop' | 'cancelled' | 'interrupted
 export interface ChatThreadMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
+  /** Durable transcript row id from the gateway; used for rewind/edit. */
+  rowId?: number
   content: string
   images?: string[]
   reasoning?: string
