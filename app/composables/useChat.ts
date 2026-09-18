@@ -1,4 +1,5 @@
 import type { ChatApproval, ChatStatus, ChatStopKind, ChatThreadMessage, ChatToolEvent } from '~/types/hermes'
+import { branchCountThrough } from '~/utils/chatBranch'
 import {
   applySurvivorRowIdMap,
   asRowId,
@@ -662,6 +663,51 @@ export function useChatController() {
     }
   }
 
+  async function branchFromMessage(id: string) {
+    if (busy.value) {
+      toast.add({
+        title: '无法创建分支',
+        description: '请先停止当前回复。',
+        color: 'warning'
+      })
+      return
+    }
+    const source = messages.value.find(item => item.id === id)
+    if (source?.role !== 'assistant' || !source.content.trim()) {
+      toast.add({
+        title: '无法创建分支',
+        description: '只能从助手回复创建分支。',
+        color: 'warning'
+      })
+      return
+    }
+    const count = branchCountThrough(messages.value, id)
+    if (!count) {
+      toast.add({
+        title: '无法创建分支',
+        description: '这条消息没有可复制的内容。',
+        color: 'warning'
+      })
+      return
+    }
+    const parentId = storedSessionId.value || sessionId.value
+    if (!parentId) {
+      toast.add({
+        title: '无法创建分支',
+        description: '请先发送一条消息。',
+        color: 'warning'
+      })
+      return
+    }
+    const forked = await sessions.fork(parentId, count)
+    toast.add({
+      title: '已创建分支',
+      description: '原会话还在，请在新会话里继续。',
+      color: 'success'
+    })
+    await navigateTo(`/chat/${forked.id}`)
+  }
+
   async function steer(text: string) {
     const sid = sessionId.value
     if (!sid || !text.trim()) return
@@ -779,6 +825,7 @@ export function useChatController() {
     activeProvider,
     approval,
     attachImage,
+    branchFromMessage,
     busy,
     clearPendingSteer,
     editMessage,

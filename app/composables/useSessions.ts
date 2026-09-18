@@ -208,13 +208,14 @@ export function useSessions() {
     archivedItems.value = applyPins(archivedItems.value, pins.value)
   }
 
-  async function fork(id: string) {
+  async function fork(id: string, count?: number) {
     const chat = useChatController()
     const sid = chat.isActiveId(id)
       ? (chat.sessionId.value || id)
       : await resumeRuntime(id, false)
     const payload = await gateway.request<{ session_id?: string, stored_session_id?: string, title?: string }>('session.branch', {
-      session_id: sid
+      session_id: sid,
+      ...(typeof count === 'number' && count > 0 ? { count } : {})
     })
     const childId = payload.stored_session_id || payload.session_id || ''
     if (!childId) throw new Error('分支未返回会话 id')

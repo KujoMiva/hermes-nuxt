@@ -219,7 +219,8 @@ function sessionSummary(row) {
     started_at: row.started_at,
     message_count: row.message_count || 0,
     source: row.source || 'webui',
-    hidden: Boolean(row.hidden)
+    hidden: Boolean(row.hidden),
+    parent_session_id: row.parent_session_id || null
   }
 }
 
@@ -579,21 +580,29 @@ function handleRpc(frame, send) {
       rpcErr(send, frame, 4001, 'session not found')
       return
     }
-    if (!live.row.messages?.length) {
+    const visible = (live.row.messages || []).filter(message => (
+      (message.role === 'user' || message.role === 'assistant')
+      && String(message.text || message.content || '').trim()
+    ))
+    const count = Number.isInteger(params.count) && params.count > 0 ? params.count : visible.length
+    const history = visible.slice(0, count)
+    if (!history.length) {
       rpcErr(send, frame, 4008, 'nothing to branch — send a message first')
       return
     }
     const runtimeId = uid('sess')
     const storedId = uid('store')
+    const last = history[history.length - 1]
     const child = {
       id: storedId,
       title: `${live.row.title || '会话'} 分支`,
-      preview: live.row.preview,
+      preview: String(last?.text || last?.content || live.row.preview || ''),
       started_at: now(),
-      message_count: live.row.messages.length,
+      message_count: history.length,
       source: 'webui',
       hidden: false,
-      messages: [...live.row.messages]
+      parent_session_id: live.row.id,
+      messages: history.map(message => ({ ...message }))
     }
     store.sessions.unshift(child)
     store.live.set(runtimeId, child)
@@ -602,6 +611,7 @@ function handleRpc(frame, send) {
       stored_session_id: storedId,
       title: child.title,
       parent: live.row.id,
+      message_count: history.length,
       messages: child.messages
     })
     return

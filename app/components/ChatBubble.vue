@@ -9,16 +9,20 @@ const props = defineProps<{
 }>()
 
 const chat = useChatController()
+const toast = useToast()
 const copied = ref(false)
 const editing = ref(false)
 const saving = ref(false)
+const branching = ref(false)
 const confirmOpen = ref(false)
+const branchOpen = ref(false)
 const draft = ref('')
 const editorRef = ref<HTMLTextAreaElement | null>(null)
 const failed = ref<Record<string, boolean>>({})
 const stopLabel = computed(() => stopKindLabel(props.message.stopKind))
 const tools = computed(() => visibleTools(props.message.tools || []))
 const canEdit = computed(() => props.message.role === 'user' && Boolean(props.message.content?.trim()))
+const canBranch = computed(() => props.message.role === 'assistant' && Boolean(props.message.content?.trim()) && !props.message.streaming)
 const canCommit = computed(() => Boolean(draft.value.trim()) && draft.value.trim() !== props.message.content.trim())
 
 const hasLaterTurns = computed(() => {
@@ -109,6 +113,35 @@ function onEditorKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     requestCommit()
+  }
+}
+
+function requestBranch() {
+  if (!canBranch.value || branching.value) return
+  if (chat.busy.value) {
+    toast.add({
+      title: '无法创建分支',
+      description: '请先停止当前回复。',
+      color: 'warning'
+    })
+    return
+  }
+  branchOpen.value = true
+}
+
+async function confirmBranch() {
+  branching.value = true
+  branchOpen.value = false
+  try {
+    await chat.branchFromMessage(props.message.id)
+  } catch (error) {
+    toast.add({
+      title: '无法创建分支',
+      description: error instanceof Error ? error.message : String(error),
+      color: 'error'
+    })
+  } finally {
+    branching.value = false
   }
 }
 </script>
@@ -236,9 +269,19 @@ function onEditorKeydown(event: KeyboardEvent) {
         </p>
 
         <div
-          v-if="message.content && !message.streaming"
+          v-if="canBranch"
           class="bubble__copy"
         >
+          <UiButton
+            icon="i-lucide-git-fork"
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            :loading="branching"
+            :disabled="branching"
+            aria-label="从此处创建分支"
+            @click="requestBranch"
+          />
           <UiButton
             :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
             color="neutral"
@@ -260,6 +303,17 @@ function onEditorKeydown(event: KeyboardEvent) {
     :loading="saving"
     @confirm="commitEdit"
     @cancel="confirmOpen = false"
+  />
+
+  <UiConfirm
+    v-model:open="branchOpen"
+    icon="i-lucide-git-fork"
+    title="从这条消息创建分支？"
+    description="会把这条及之前的对话复制到新会话。原会话会保留。"
+    confirm-label="创建分支"
+    :loading="branching"
+    @confirm="confirmBranch"
+    @cancel="branchOpen = false"
   />
 </template>
 
@@ -412,6 +466,7 @@ function onEditorKeydown(event: KeyboardEvent) {
 .bubble__copy {
   display: flex;
   align-items: center;
+  gap: 0.1rem;
 }
 
 .bubble__stop {
