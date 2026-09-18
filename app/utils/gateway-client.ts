@@ -7,7 +7,7 @@ export interface GatewayEvent<P = unknown> {
 }
 
 interface JsonRpcFrame {
-  error?: { code?: number; message?: string }
+  error?: { code?: number, message?: string }
   id?: number | string | null
   method?: string
   params?: GatewayEvent
@@ -59,7 +59,7 @@ export class JsonRpcGatewayClient {
     const socket = new WebSocket(wsUrl)
     this.socket = socket
 
-    socket.addEventListener('message', event => {
+    socket.addEventListener('message', (event) => {
       if (this.socket !== socket) {
         return
       }

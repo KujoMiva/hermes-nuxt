@@ -28,6 +28,10 @@ export function applySetCookie(cookies: Record<string, string>, response: Respon
 
   for (const line of lines) {
     const [pair, ...attrs] = line.split(';')
+    if (!pair) {
+      continue
+    }
+
     const eq = pair.indexOf('=')
 
     if (eq < 0) {
@@ -44,7 +48,7 @@ export function applySetCookie(cookies: Record<string, string>, response: Respon
     }
 
     if (!value || maxAgeValue === 0) {
-      delete cookies[name]
+      Reflect.deleteProperty(cookies, name)
     } else {
       cookies[name] = value
     }
@@ -68,7 +72,7 @@ function readErrorDetail(body: unknown, fallback: string): string {
     return fallback
   }
 
-  const record = body as { detail?: unknown; error?: unknown; message?: unknown }
+  const record = body as { detail?: unknown, error?: unknown, message?: unknown }
 
   if (typeof record.detail === 'string' && record.detail.trim()) {
     return record.detail
@@ -87,8 +91,8 @@ function readErrorDetail(body: unknown, fallback: string): string {
 
 function formatProbeError(error: unknown): string {
   const cause = error instanceof Error ? error.cause : undefined
-  const code =
-    cause && typeof cause === 'object' && 'code' in cause ? String((cause as { code?: unknown }).code || '') : ''
+  const code
+    = cause && typeof cause === 'object' && 'code' in cause ? String((cause as { code?: unknown }).code || '') : ''
 
   if (code === 'ECONNREFUSED') {
     return '无法连接到该 Hermes 网关（连接被拒绝）'
@@ -319,7 +323,7 @@ export async function readJson<T>(response: Response): Promise<T> {
 
 export async function passwordLogin(
   baseUrl: string,
-  input: { password: string; provider: string; username: string }
+  input: { password: string, provider: string, username: string }
 ): Promise<GatewayConnection> {
   const cookies: Record<string, string> = {}
   const response = await publicFetch(`${baseUrl}/auth/password-login`, {
@@ -361,7 +365,7 @@ export async function tokenLogin(baseUrl: string, token: string, version?: strin
 
 export async function redeemNativeLogin(
   baseUrl: string,
-  input: { code: string; verifier: string }
+  input: { code: string, verifier: string }
 ): Promise<GatewayConnection> {
   const parsed = new URL(baseUrl)
   const prefix = parsed.pathname.replace(/\/+$/, '')

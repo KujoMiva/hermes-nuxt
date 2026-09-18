@@ -257,7 +257,7 @@ const showRestWarning = computed(() => !settings.restAvailable.value)
             class="panel__warn"
           >
             <p>
-              这些辅助任务仍钉在其他供应商（{{ staleSlots[0].provider }}）：
+              这些辅助任务仍钉在其他供应商（{{ staleSlots[0]?.provider }}）：
               {{ staleSlots.map(item => settings.auxTaskLabel(item.task)).join('、') }}。
               主模型切换不会自动改它们，可能继续扣旧账号的额度。
             </p>

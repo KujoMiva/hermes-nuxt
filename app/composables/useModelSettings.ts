@@ -202,7 +202,7 @@ export function useModelSettings() {
     } catch (error) {
       if (error instanceof DashboardApiError && error.statusCode === 404) {
         restAvailable.value = false
-        throw new Error('当前网关没有 /api/model/set。请使用 hermes serve 控制台接口来写入默认模型。')
+        throw new Error('当前网关没有 /api/model/set。请使用 hermes serve 控制台接口来写入默认模型。', { cause: error })
       }
       throw error
     }

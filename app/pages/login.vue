@@ -168,7 +168,7 @@ function startOauth() {
 
 function fetchErrorMessage(caught: unknown): string {
   const record = caught as {
-    data?: { message?: string; statusMessage?: string }
+    data?: { message?: string, statusMessage?: string }
     message?: string
     statusMessage?: string
   }

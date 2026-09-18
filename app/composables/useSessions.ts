@@ -146,7 +146,7 @@ export function useSessions() {
       archivedItems.value = applyPins(
         (payload.sessions || [])
           .map(asSession)
-          .filter((row): row is HermesSession => Boolean(row && (row.hidden || row.archived || !visibleIds.has(row.id) && row.hidden)))
+          .filter((row): row is HermesSession => Boolean(row && (row.hidden || row.archived || (!visibleIds.has(row.id) && row.hidden))))
           .filter(row => !visibleIds.has(row.id) || Boolean(row.hidden || row.archived)),
         pins.value
       )

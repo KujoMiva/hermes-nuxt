@@ -3,7 +3,7 @@ import { gatewayHostLabel, normalizeRemoteBaseUrl } from '#shared/utils/remote-u
 import { deriveLoginKind, GatewayHttpError, passwordLogin, probeGateway, tokenLogin } from '../utils/gateway'
 import { persistConnection } from '../utils/session'
 
-export default defineEventHandler(async event => {
+export default defineEventHandler(async (event) => {
   const body = await readBody<{
     password?: string
     provider?: string
@@ -38,10 +38,10 @@ export default defineEventHandler(async event => {
     if (kind === 'password') {
       const username = String(body?.username || '').trim()
       const password = String(body?.password || '')
-      const provider =
-        String(body?.provider || '').trim() ||
-        probe.providers.find(item => item.supportsPassword)?.name ||
-        'basic'
+      const provider
+        = String(body?.provider || '').trim()
+          || probe.providers.find(item => item.supportsPassword)?.name
+          || 'basic'
 
       if (!username || !password) {
         throw createError({ statusCode: 400, message: '请输入用户名和密码' })
@@ -62,10 +62,10 @@ export default defineEventHandler(async event => {
     }
 
     if (kind === 'oauth') {
-        throw createError({
-          statusCode: 400,
-          message: '该网关使用 OAuth，请点击登录按钮完成浏览器授权'
-        })
+      throw createError({
+        statusCode: 400,
+        message: '该网关使用 OAuth，请点击登录按钮完成浏览器授权'
+      })
     }
 
     const token = String(body?.token || '').trim()
@@ -91,8 +91,8 @@ export default defineEventHandler(async event => {
     }
 
     if (error instanceof GatewayHttpError) {
-      const message =
-        error.statusCode === 401
+      const message
+        = error.statusCode === 401
           ? '凭证无效，请检查用户名、密码或会话令牌'
           : error.message
       throw createError({ statusCode: error.statusCode, message })

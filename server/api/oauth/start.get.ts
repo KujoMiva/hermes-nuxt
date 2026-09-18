@@ -9,7 +9,7 @@ import {
 } from '../../utils/pkce'
 import { rememberPendingOauth } from '../../utils/session'
 
-export default defineEventHandler(async event => {
+export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const rawUrl = coerceRemoteUrlScheme(String(query.url || ''))
 

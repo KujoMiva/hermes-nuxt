@@ -17,16 +17,17 @@ export async function fetchAllSessionMessages(request: GatewayRequest, sessionId
   const history = resumed.messages?.length
     ? resumed
     : await request<{ messages?: unknown[] }>('session.history', {
-      session_id: resumed.session_id || sessionId
-    })
+        session_id: resumed.session_id || sessionId
+      })
 
   return (history.messages || []).map((item, index): HermesMessage => {
     const rec = asRecord(item)
     const role = rec.role === 'user' || rec.role === 'assistant' || rec.role === 'system' || rec.role === 'tool'
       ? rec.role
       : 'assistant'
+    const rawId = rec.row_id ?? rec.id
     return {
-      id: rec.row_id ?? rec.id ?? index,
+      id: typeof rawId === 'string' || typeof rawId === 'number' ? rawId : index,
       role,
       content: rec.text || rec.content || rec.context || '',
       timestamp: rec.timestamp as string | number | undefined,

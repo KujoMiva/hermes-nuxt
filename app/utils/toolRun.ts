@@ -27,9 +27,9 @@ const FILE_EDIT_TOOLS = new Set(['edit_file', 'patch', 'write_file'])
 const CARD_TOOLS = new Set(['clarify', 'delegate_task', 'image_generate', 'manage_connections'])
 const SILENT_TOOLS = new Set(['react_to_message', 'todo', 'todo_list'])
 
-export type ToolRunItem =
-  | { kind: 'run', start: number, end: number }
-  | { kind: 'card', index: number }
+export type ToolRunItem
+  = | { kind: 'run', start: number, end: number }
+    | { kind: 'card', index: number }
 
 export function isFileEditTool(name: string) {
   return FILE_EDIT_TOOLS.has(name)

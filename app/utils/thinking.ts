@@ -1,10 +1,10 @@
 import { formatShortDuration } from './format'
 
-const THINKING_STATUS_PREFIX_RE =
-  /^\s*(?:(?:[^\s.]{1,16})\s+)?(?:processing|thinking|reasoning|analyzing|pondering|contemplating|musing|cogitating|ruminating|deliberating|mulling|reflecting|computing|synthesizing|formulating|brainstorming)\.\.\.\s*/i
+const THINKING_STATUS_PREFIX_RE
+  = /^\s*(?:(?:[^\s.]{1,16})\s+)?(?:processing|thinking|reasoning|analyzing|pondering|contemplating|musing|cogitating|ruminating|deliberating|mulling|reflecting|computing|synthesizing|formulating|brainstorming)\.\.\.\s*/i
 
-const EMPTY_THINKING_PLACEHOLDER_RE =
-  /\b(?:current rewritten thinking|next thinking to process|provide the thinking content|don't see any .*thinking)\b/i
+const EMPTY_THINKING_PLACEHOLDER_RE
+  = /\b(?:current rewritten thinking|next thinking to process|provide the thinking content|don't see any .*thinking)\b/i
 
 export const REASONING_CHAR_CAP = 80_000
 

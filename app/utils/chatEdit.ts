@@ -83,7 +83,7 @@ export async function resolveDurableRowId(
     return typeof asRowId(message.row_id) === 'number'
   })
 
-  const matches = durableUsers.filter((message) => String(message.text || message.content || '').trim() === wanted)
+  const matches = durableUsers.filter(message => String(message.text || message.content || '').trim() === wanted)
   if (matches.length === 1) return asRowId(matches[0]?.row_id)
   if (matches.length > 1 && typeof expectedOrdinal === 'number' && expectedOrdinal >= durableUsers.length - 1) {
     const last = matches.at(-1)

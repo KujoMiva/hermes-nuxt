@@ -2,7 +2,7 @@ import { defineEventHandler } from 'h3'
 import { gatewayHostLabel } from '#shared/utils/remote-url'
 import { getConnectionForEvent } from '../utils/session'
 
-export default defineEventHandler(event => {
+export default defineEventHandler((event) => {
   const connection = getConnectionForEvent(event)
 
   if (!connection) {

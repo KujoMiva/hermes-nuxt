@@ -94,8 +94,14 @@ export function useModelCatalog() {
   const loaded = useState('hermes-model-catalog-loaded', () => false)
 
   const groups = computed(() => providers.value.filter(item => item.models?.length))
+  const currentId = computed(() => {
+    const selected = model.value?.trim() || ''
+    if (!isGenericModel(selected)) return selected
+    if (serverDefault.value && !isGenericModel(serverDefault.value)) return serverDefault.value
+    return ''
+  })
   const currentLabel = computed(() => {
-    const id = model.value.trim()
+    const id = currentId.value || model.value.trim()
     if (!id) return serverDefault.value || '默认模型'
     for (const group of providers.value) {
       const hit = (group.models || []).find(item => item.id === id)
@@ -103,6 +109,15 @@ export function useModelCatalog() {
     }
     return id
   })
+
+  function select(nextModel: string, nextProvider = '') {
+    model.value = nextModel
+    provider.value = nextProvider
+  }
+
+  function isSelected(option: ModelOption) {
+    return option.id === currentId.value && (!option.provider || !provider.value || option.provider === provider.value)
+  }
 
   async function refresh(force = false) {
     if (!isConfigured.value) {
@@ -127,10 +142,10 @@ export function useModelCatalog() {
         const aliasRows = rec.models || rec.aliases
         aliases.value = Array.isArray(aliasRows)
           ? aliasRows.map((item) => {
-            const row = item as Record<string, unknown>
-            const id = String(row.id || row.model || item || '')
-            return { id, owned_by: String(row.owned_by || row.provider || '') }
-          }).filter(item => item.id)
+              const row = item as Record<string, unknown>
+              const id = String(row.id || row.model || item || '')
+              return { id, owned_by: String(row.owned_by || row.provider || '') }
+            }).filter(item => item.id)
           : []
         loaded.value = true
       } catch (error) {
@@ -154,12 +169,15 @@ export function useModelCatalog() {
     aliases,
     contextLength,
     currentContext,
+    currentId,
     currentLabel,
     groups,
+    isSelected,
     loaded,
     loading,
     providers,
     refresh,
+    select,
     serverDefault,
     serverProvider
   }

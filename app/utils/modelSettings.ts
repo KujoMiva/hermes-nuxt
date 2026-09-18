@@ -56,11 +56,14 @@ export function sparsePatch(path: string, value: unknown) {
   const root: Record<string, unknown> = {}
   let cursor = root
   for (let index = 0; index < parts.length - 1; index += 1) {
+    const key = parts[index]
+    if (!key) continue
     const next: Record<string, unknown> = {}
-    cursor[parts[index]] = next
+    cursor[key] = next
     cursor = next
   }
-  cursor[parts[parts.length - 1]] = value
+  const last = parts[parts.length - 1]
+  if (last) cursor[last] = value
   return root
 }
 

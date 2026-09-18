@@ -2,7 +2,7 @@ import { defineEventHandler, getQuery, sendRedirect } from 'h3'
 import { redeemNativeLogin } from '../../utils/gateway'
 import { persistConnection, takePendingOauth } from '../../utils/session'
 
-export default defineEventHandler(async event => {
+export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const error = String(query.error || '')
   const code = String(query.code || '')

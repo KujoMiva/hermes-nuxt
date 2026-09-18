@@ -23,7 +23,7 @@ export function generateOauthState(): string {
 
 export function buildNativeAuthorizeUrl(
   baseUrl: string,
-  params: { challenge: string; redirectUri: string; state: string; provider?: string }
+  params: { challenge: string, redirectUri: string, state: string, provider?: string }
 ): string {
   const parsed = new URL(baseUrl)
   const prefix = parsed.pathname.replace(/\/+$/, '')

@@ -22,7 +22,7 @@ export function normalizeRemoteBaseUrl(rawUrl: string): string {
   try {
     parsed = new URL(value)
   } catch (error) {
-    throw new Error(`网关 URL 无效：${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(`网关 URL 无效：${error instanceof Error ? error.message : String(error)}`, { cause: error })
   }
 
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
@@ -45,7 +45,7 @@ export function gatewayHostLabel(baseUrl: string): string {
   }
 }
 
-export function buildGatewayWsUrl(baseUrl: string, auth: { name: string; value: string }): string {
+export function buildGatewayWsUrl(baseUrl: string, auth: { name: string, value: string }): string {
   const parsed = new URL(baseUrl)
   const wsScheme = parsed.protocol === 'https:' ? 'wss' : 'ws'
   const prefix = parsed.pathname.replace(/\/+$/, '')

@@ -24,7 +24,7 @@ function asText(message: unknown): string {
   }
 
   if (message && typeof message === 'object') {
-    const record = message as { data?: unknown; text?: () => string; toString?: () => string }
+    const record = message as { data?: unknown, text?: () => string, toString?: () => string }
 
     if (typeof record.text === 'function') {
       return record.text()
@@ -111,12 +111,12 @@ export default defineWebSocketHandler({
       const remote = new WebSocket(wsUrl)
       peer.context.remote = remote
 
-      remote.addEventListener('message', event => {
+      remote.addEventListener('message', (event) => {
         const data = typeof event.data === 'string' ? event.data : String(event.data)
         peer.send(data)
       })
 
-      remote.addEventListener('close', event => {
+      remote.addEventListener('close', (event) => {
         peer.close(event.code || 1000, event.reason || 'remote closed')
       })
 

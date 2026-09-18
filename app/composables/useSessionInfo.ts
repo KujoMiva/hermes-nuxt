@@ -1,16 +1,18 @@
+import { ofetch } from 'ofetch'
 import type { PublicSession } from '#shared/types/gateway'
 
 export function useSessionInfo() {
   const session = useState<PublicSession>('hermes-session', () => ({ loggedIn: false }))
 
   async function refresh() {
-    const requestFetch = import.meta.server ? useRequestFetch() : $fetch
-    session.value = await requestFetch<PublicSession>('/api/session')
+    session.value = await ofetch<PublicSession>('/api/session', {
+      headers: import.meta.server ? useRequestHeaders(['cookie']) : undefined
+    })
     return session.value
   }
 
   async function logout() {
-    await $fetch('/api/logout', { method: 'POST' })
+    await ofetch('/api/logout', { method: 'POST' })
     session.value = { loggedIn: false }
     await navigateTo('/login')
   }

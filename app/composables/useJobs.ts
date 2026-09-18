@@ -108,7 +108,7 @@ export function useJobs() {
       await gateway.request('cron.manage', { action: 'run', name: job.id })
     } catch (error) {
       if (error instanceof JsonRpcGatewayError && error.code === 4016) {
-        throw new Error('远程网关不支持立即运行定时任务，请等计划时间触发')
+        throw new Error('远程网关不支持立即运行定时任务，请等计划时间触发', { cause: error })
       }
       throw error
     }
@@ -124,7 +124,7 @@ export function useJobs() {
     const enabled = all.filter(isJobEnabled)
     const failed = all.filter(isJobFailed)
     const nextTimes = enabled
-      .map(item => {
+      .map((item) => {
         const raw = item.next_run_at
         if (raw == null || raw === '') return 0
         if (typeof raw === 'number') return raw > 1e12 ? raw : raw * 1000

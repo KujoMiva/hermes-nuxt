@@ -7,18 +7,23 @@
     "dev": "nuxt dev --host 127.0.0.1 --port 3000",
     "build": "nuxt build",
     "preview": "nuxt preview --host 127.0.0.1 --port 3000",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "lint": "eslint .",
+    "typecheck": "nuxt typecheck"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.133",
     "@nuxt/icon": "^2.5.1",
     "isomorphic-dompurify": "^4.2.0",
     "katex": "^0.18.7",
-    "nuxt": "^4.1.2",
-    "vue": "^3.5.21",
-    "vue-router": "^4.5.1"
+    "nuxt": "^4.5.2"
   },
   "devDependencies": {
-    "sass-embedded": "^1.104.1"
+    "@nuxt/eslint": "^1.17.0",
+    "@types/node": "^26.4.1",
+    "eslint": "^10.9.1",
+    "sass-embedded": "^1.104.1",
+    "typescript": "^6.0.3",
+    "vue-tsc": "^3.3.11"
   }
 }

@@ -1,10 +1,32 @@
 export default defineNuxtConfig({
-  compatibilityDate: '2026-09-17',
-  modules: ['@nuxt/icon'],
+  modules: ['@nuxt/eslint', '@nuxt/icon'],
+  devtools: {
+    enabled: false
+  },
+  app: {
+    head: {
+      htmlAttrs: { lang: 'zh-Hans' },
+      title: 'Hermes',
+      meta: [
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover' },
+        { name: 'color-scheme', content: 'light' },
+        { name: 'theme-color', content: '#fafaf9' }
+      ],
+      link: [
+        { rel: 'icon', type: 'image/png', href: '/favicon.png' },
+        { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }
+      ]
+    }
+  },
   css: ['~/assets/scss/main.scss', 'katex/dist/katex.min.css'],
   runtimeConfig: {
     sessionPassword: process.env.NUXT_SESSION_PASSWORD || 'hermes-nuxt-dev-session-password-change-me'
   },
+  devServer: {
+    host: '127.0.0.1',
+    port: 3000
+  },
+  compatibilityDate: '2026-09-17',
   nitro: {
     experimental: {
       websocket: true
@@ -20,6 +42,14 @@ export default defineNuxtConfig({
           },
           loadPaths: ['app/assets/scss']
         }
+      }
+    }
+  },
+  eslint: {
+    config: {
+      stylistic: {
+        commaDangle: 'never',
+        braceStyle: '1tbs'
       }
     }
   },
@@ -41,27 +71,5 @@ export default defineNuxtConfig({
         'lucide:square'
       ]
     }
-  },
-  app: {
-    head: {
-      htmlAttrs: { lang: 'zh-Hans' },
-      title: 'Hermes',
-      meta: [
-        { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover' },
-        { name: 'color-scheme', content: 'light' },
-        { name: 'theme-color', content: '#fafaf9' }
-      ],
-      link: [
-        { rel: 'icon', type: 'image/png', href: '/favicon.png' },
-        { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }
-      ]
-    }
-  },
-  devServer: {
-    host: '127.0.0.1',
-    port: 3000
-  },
-  devtools: {
-    enabled: false,
   }
 })

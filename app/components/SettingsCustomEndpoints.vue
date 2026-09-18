@@ -97,7 +97,8 @@ async function probe() {
         timeout: 20_000
       }
     )
-    if (result.models?.length && !form.model) form.model = result.models[0]
+    const probedModel = result.models?.[0]
+    if (probedModel && !form.model) form.model = probedModel
     toast.add({
       title: result.ok ? '端点可达' : '探测完成',
       description: result.message || (result.reachable ? '已连通' : '无法连通'),

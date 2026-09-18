@@ -37,9 +37,10 @@ export function useDashboardApi() {
     } = {}
   ) {
     const slug = path.replace(/^\/api\//, '').replace(/^\/+/, '')
+    const fetchApi = $fetch as <R>(url: string, opts?: Record<string, unknown>) => Promise<R>
     try {
-      return await $fetch<T>(`/api/remote/${slug}`, {
-        method: (options.method || 'GET') as 'GET' | 'POST' | 'PUT' | 'DELETE',
+      return await fetchApi<T>(`/api/remote/${slug}`, {
+        method: options.method || 'GET',
         body: options.body,
         query: options.query,
         timeout: options.timeout

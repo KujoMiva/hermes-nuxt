@@ -2,7 +2,7 @@ import { createError, defineEventHandler, readBody } from 'h3'
 import { coerceRemoteUrlScheme } from '#shared/utils/remote-url'
 import { probeGateway } from '../utils/gateway'
 
-export default defineEventHandler(async event => {
+export default defineEventHandler(async (event) => {
   const body = await readBody<{ url?: string }>(event)
   const url = coerceRemoteUrlScheme(String(body?.url || ''))
 

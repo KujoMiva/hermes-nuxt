@@ -284,6 +284,7 @@ export interface Capabilities {
   object?: string
   platform?: string
   model?: string
+  version?: string
   features?: Record<string, unknown>
   endpoints?: Record<string, { method?: string, path?: string }>
   runtime?: Record<string, unknown>

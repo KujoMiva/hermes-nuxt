@@ -72,7 +72,7 @@ function decodeFrames(buffer) {
 }
 
 function readBody(req) {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const chunks = []
     req.on('data', chunk => chunks.push(chunk))
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
@@ -82,7 +82,7 @@ function readBody(req) {
 let seq = 1
 let messageRowSeq = 2
 const now = () => Math.floor(Date.now() / 1000)
-const uid = (prefix) => `${prefix}-${seq++}`
+const uid = prefix => `${prefix}-${seq++}`
 const nextRowId = () => ++messageRowSeq
 const generations = new Map()
 
@@ -913,7 +913,7 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, scope, provider, model, task })
       return
     }
-    sendJson(res, 400, { detail: "scope must be 'main' or 'auxiliary'" })
+    sendJson(res, 400, { detail: 'scope must be \'main\' or \'auxiliary\'' })
     return
   }
 
@@ -995,7 +995,9 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 404, { detail: 'custom endpoint not found' })
       return
     }
-    store.model.endpoints.forEach(item => { item.is_current = item.id === id })
+    store.model.endpoints.forEach((item) => {
+      item.is_current = item.id === id
+    })
     store.model.provider = id
     store.model.model = row.model
     sendJson(res, 200, { ok: true, provider: id, model: row.model })
@@ -1029,10 +1031,10 @@ server.on('upgrade', (req, socket) => {
 
   const accept = createHash('sha1').update(key + GUID).digest('base64')
   socket.write(
-    'HTTP/1.1 101 Switching Protocols\r\n' +
-      'Upgrade: websocket\r\n' +
-      'Connection: Upgrade\r\n' +
-      `Sec-WebSocket-Accept: ${accept}\r\n\r\n`
+    'HTTP/1.1 101 Switching Protocols\r\n'
+    + 'Upgrade: websocket\r\n'
+    + 'Connection: Upgrade\r\n'
+    + `Sec-WebSocket-Accept: ${accept}\r\n\r\n`
   )
 
   const send = payload => socket.write(encodeTextFrame(JSON.stringify(payload)))
@@ -1043,7 +1045,7 @@ server.on('upgrade', (req, socket) => {
   })
 
   let rest = Buffer.alloc(0)
-  socket.on('data', chunk => {
+  socket.on('data', (chunk) => {
     rest = Buffer.concat([rest, chunk])
     const decoded = decodeFrames(rest)
     rest = decoded.rest
