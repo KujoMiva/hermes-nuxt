@@ -15,7 +15,6 @@ const titles: Record<string, string> = {
 }
 
 const tabTitles: Record<string, string> = {
-  connection: '连接设置',
   profiles: 'Profiles',
   skills: '技能',
   tools: '工具集',

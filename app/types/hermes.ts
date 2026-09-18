@@ -4,7 +4,6 @@ export interface ConnectionConfig {
   baseUrl: string
   apiKey: string
   profile: string
-  systemPrompt: string
   model: string
   provider: string
   reasoningEffort: ReasoningEffort

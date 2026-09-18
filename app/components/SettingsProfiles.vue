@@ -5,6 +5,7 @@ import { PROFILE_NAV } from '~/composables/useProfiles'
 defineOptions({ name: 'SettingsProfiles' })
 
 const connection = useConnection()
+const gateway = useGateway()
 const profiles = useProfiles()
 const avatars = useProfileAvatars()
 const labels = useProfileLabels()
@@ -15,15 +16,76 @@ const fileRef = ref<HTMLInputElement | null>(null)
 const avatarTarget = ref('')
 const editorOpen = ref(false)
 const switchingId = ref('')
+const promptDraft = ref('')
+const promptSaved = ref('')
+const loadingPrompt = ref(false)
+const savingPrompt = ref(false)
 const editor = reactive<ProfileDraft>({
   localId: '',
   name: '',
   slug: ''
 })
 
-onMounted(() => {
-  void profiles.refresh()
+onMounted(async () => {
+  await profiles.refresh()
+  await loadPrompt()
 })
+
+watch(() => connection.profile.value, () => {
+  void loadPrompt()
+})
+
+function asPromptText(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return ''
+  const rec = payload as { prompt?: unknown, value?: unknown }
+  if (typeof rec.prompt === 'string') return rec.prompt
+  if (typeof rec.value === 'string') return rec.value
+  return ''
+}
+
+async function loadPrompt() {
+  if (!connection.isConfigured.value) {
+    promptDraft.value = ''
+    promptSaved.value = ''
+    return
+  }
+  loadingPrompt.value = true
+  try {
+    const payload = await gateway.request('config.get', { key: 'prompt' })
+    const text = asPromptText(payload)
+    promptDraft.value = text
+    promptSaved.value = text
+  } catch {
+    promptDraft.value = ''
+    promptSaved.value = ''
+  } finally {
+    loadingPrompt.value = false
+  }
+}
+
+const promptDirty = computed(() => promptDraft.value.trim() !== promptSaved.value.trim())
+
+async function savePrompt() {
+  const text = promptDraft.value.trim()
+  savingPrompt.value = true
+  try {
+    await gateway.request('config.set', {
+      key: 'prompt',
+      value: text || 'clear'
+    })
+    promptDraft.value = text
+    promptSaved.value = text
+    toast.add({ title: '系统提示已保存到当前 Profile', color: 'success' })
+  } catch (error) {
+    toast.add({
+      title: '无法保存系统提示',
+      description: error instanceof Error ? error.message : String(error),
+      color: 'error'
+    })
+  } finally {
+    savingPrompt.value = false
+  }
+}
 
 function avatarSrc(item: HermesProfileOption) {
   return avatars.url(item.localId) || avatars.url(item.id)
@@ -221,24 +283,44 @@ async function openSection(item: HermesProfileOption, tab: string) {
           />
         </div>
       </div>
-      <div
-        v-if="item.isActive"
-        class="profile-card__nav"
-      >
-        <button
-          v-for="entry in PROFILE_NAV"
-          :key="entry.tab"
-          type="button"
-          class="profile-card__link"
-          @click="openSection(item, entry.tab)"
-        >
-          <UiIcon
-            :name="entry.icon"
-            :size="20"
+      <template v-if="item.isActive">
+        <div class="profile-card__nav">
+          <button
+            v-for="entry in PROFILE_NAV"
+            :key="entry.tab"
+            type="button"
+            class="profile-card__link"
+            @click="openSection(item, entry.tab)"
+          >
+            <UiIcon
+              :name="entry.icon"
+              :size="20"
+            />
+            <span>{{ entry.label }}</span>
+          </button>
+        </div>
+        <div class="profile-card__prompt">
+          <UiFormField
+            label="附加系统提示（可选）"
+            hint="写入当前 Profile 的 custom_prompt，叠加在 SOUL.md 之上。"
+          >
+            <UiTextarea
+              v-model="promptDraft"
+              :rows="4"
+              placeholder="提示词..."
+              :disabled="loadingPrompt || savingPrompt"
+            />
+          </UiFormField>
+          <UiButton
+            color="neutral"
+            label="保存提示"
+            icon="i-lucide-save"
+            :loading="savingPrompt"
+            :disabled="loadingPrompt || !promptDirty"
+            @click="savePrompt"
           />
-          <span>{{ entry.label }}</span>
-        </button>
-      </div>
+        </div>
+      </template>
       <div
         v-else
         class="profile-card__switch"
@@ -457,6 +539,18 @@ async function openSection(item: HermesProfileOption, tab: string) {
 
   :deep(.ui-btn) {
     width: 100%;
+  }
+}
+
+.profile-card__prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-top: 1px solid var(--color-border);
+  padding: 0.9rem 1rem 1rem;
+
+  :deep(.ui-btn) {
+    align-self: flex-start;
   }
 }
 

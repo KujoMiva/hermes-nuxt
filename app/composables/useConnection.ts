@@ -13,7 +13,6 @@ export function useConnection() {
   const toast = useToast()
 
   const profileCookie = useCookie('hermes-profile', { ...COOKIE_OPTS, default: () => '' })
-  const systemPromptCookie = useCookie('hermes-system-prompt', { ...COOKIE_OPTS, default: () => '' })
   const modelCookie = useCookie('hermes-model', { ...COOKIE_OPTS, default: () => '' })
   const providerCookie = useCookie('hermes-provider', { ...COOKIE_OPTS, default: () => '' })
   const reasoningCookie = useCookie<ReasoningEffort>('hermes-reasoning', {
@@ -30,12 +29,6 @@ export function useConnection() {
     get: () => profileCookie.value || '',
     set: (value: string) => {
       profileCookie.value = value
-    }
-  })
-  const systemPrompt = computed({
-    get: () => systemPromptCookie.value || '',
-    set: (value: string) => {
-      systemPromptCookie.value = value
     }
   })
   const model = computed({
@@ -87,7 +80,6 @@ export function useConnection() {
 
   function applyLocal(partial: Partial<ConnectionConfig>) {
     if (partial.profile != null) profile.value = partial.profile
-    if (partial.systemPrompt != null) systemPrompt.value = partial.systemPrompt
     if (partial.model != null) model.value = partial.model
     if (partial.provider != null) provider.value = partial.provider
     if (partial.reasoningEffort != null) reasoningEffort.value = partial.reasoningEffort
@@ -114,7 +106,6 @@ export function useConnection() {
     reasoningEffort,
     serverModel,
     session,
-    systemPrompt,
     testConnection,
     toast
   }

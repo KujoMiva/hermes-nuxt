@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import SettingsConnection from '~/components/SettingsConnection.vue'
 import SettingsProfiles from '~/components/SettingsProfiles.vue'
 import SettingsSkills from '~/components/SettingsSkills.vue'
 import SettingsTools from '~/components/SettingsTools.vue'
@@ -9,11 +8,10 @@ import SettingsStatus from '~/components/SettingsStatus.vue'
 
 definePageMeta({ layout: 'default' })
 
-const TAB_IDS = ['connection', 'profiles', 'skills', 'tools', 'models', 'status'] as const
+const TAB_IDS = ['profiles', 'skills', 'tools', 'models', 'status'] as const
 type SettingsTab = typeof TAB_IDS[number]
 
 const panels: Record<SettingsTab, Component> = {
-  connection: SettingsConnection,
   profiles: SettingsProfiles,
   skills: SettingsSkills,
   tools: SettingsTools,
@@ -28,8 +26,19 @@ function isSettingsTab(value: unknown): value is SettingsTab {
 }
 
 const tab = computed(() => {
+  if (route.query.tab === 'connection') return 'profiles'
   return isSettingsTab(route.query.tab) ? route.query.tab : null
 })
+
+watch(
+  () => route.query.tab,
+  (value) => {
+    if (value === 'connection') {
+      void navigateTo({ path: '/settings', query: { tab: 'profiles' } }, { replace: true })
+    }
+  },
+  { immediate: true }
+)
 
 const panel = computed(() => (tab.value ? panels[tab.value] : null))
 </script>

@@ -113,6 +113,7 @@ const store = {
   ],
   sessions: [],
   live: new Map(),
+  customPrompt: '',
   model: {
     provider: 'mock',
     model: 'mock-chat',
@@ -336,6 +337,16 @@ function handleRpc(frame, send) {
     }
     if (method === 'config.get' && key === 'fast') {
       rpcOk(send, frame, { value: store.model.fast ? 'fast' : 'normal' })
+      return
+    }
+    if (method === 'config.get' && key === 'prompt') {
+      rpcOk(send, frame, { prompt: store.customPrompt || '' })
+      return
+    }
+    if (method === 'config.set' && key === 'prompt') {
+      const next = String(params.value || '')
+      store.customPrompt = next === 'clear' ? '' : next
+      rpcOk(send, frame, { key: 'prompt', value: store.customPrompt })
       return
     }
     if (method === 'config.set' && key === 'reasoning') {

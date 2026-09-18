@@ -138,20 +138,7 @@ const statusDots = computed(() => [
   }
 ])
 
-const connectionLabel = computed(() => {
-  if (!isConfigured.value) return '未配置'
-  if (connecting.value) return '连接中'
-  if (connected.value) return '已连接'
-  return '异常'
-})
-
 const shortcuts = computed(() => [
-  {
-    to: '/settings?tab=connection',
-    icon: 'i-lucide-plug',
-    label: '连接设置',
-    value: connectionLabel.value
-  },
   {
     to: '/settings?tab=profiles',
     icon: 'i-lucide-atom',
@@ -190,16 +177,6 @@ const shortcuts = computed(() => [
             {{ hostMode }}
           </p>
         </div>
-        <UiButton
-          to="/settings?tab=connection"
-          active-class=""
-          exact-active-class=""
-          color="neutral"
-          variant="ghost"
-          size="xs"
-          icon="i-lucide-arrow-left-right"
-          label="管理"
-        />
       </div>
       <div class="hub__dots">
         <div
@@ -226,7 +203,7 @@ const shortcuts = computed(() => [
       <NuxtLink
         v-if="banner"
         class="hub__banner"
-        :to="isConfigured ? '/settings?tab=connection' : '/login'"
+        :to="isConfigured ? '/settings?tab=status' : '/login'"
         active-class=""
         exact-active-class=""
       >
@@ -373,10 +350,6 @@ const shortcuts = computed(() => [
   min-width: 0;
   align-items: center;
   gap: 0.75rem;
-
-  :deep(.ui-btn) {
-    flex-shrink: 0;
-  }
 }
 
 .hub__host-icon {
@@ -481,7 +454,7 @@ const shortcuts = computed(() => [
 
 .hub__shortcuts {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.55rem;
 }
 
