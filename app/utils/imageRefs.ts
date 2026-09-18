@@ -8,13 +8,6 @@ export function unwrapImageRefValue(raw: string) {
   return (quoted?.[2] ?? value).trim()
 }
 
-export function wrapImageRefValue(value: string) {
-  const trimmed = value.trim()
-  if (!trimmed) return ''
-  if (/[\s]/.test(trimmed)) return `\`${trimmed.replace(/`/g, '')}\``
-  return trimmed
-}
-
 export function extractImageRefs(text: string) {
   const refs: string[] = []
   if (!text) return { cleanedText: '', refs }
@@ -30,21 +23,12 @@ export function extractImageRefs(text: string) {
   return { cleanedText: cleanedText.trim(), refs }
 }
 
-export function composeImageMessage(text: string, refs: string[] = []) {
-  const unique = [...new Set(refs.map(item => item.trim()).filter(Boolean))]
-  const lines = unique.map(ref => `@image:${wrapImageRefValue(ref)}`)
-  const caption = text.trim()
-  if (!lines.length) return caption
-  return caption ? `${caption}\n${lines.join('\n')}` : lines.join('\n')
-}
-
 export function isDirectImageSrc(src: string) {
-  return /^(?:https?:|data:|blob:)/i.test(src) || src.startsWith('/api/media')
+  return /^(?:https?:|data:|blob:)/i.test(src)
 }
 
 export function chatMediaSrc(src: string) {
   const value = src.trim()
   if (!value) return ''
-  if (isDirectImageSrc(value)) return value
-  return `/api/media?path=${encodeURIComponent(value)}`
+  return isDirectImageSrc(value) ? value : ''
 }

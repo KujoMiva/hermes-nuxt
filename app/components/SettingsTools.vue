@@ -3,7 +3,7 @@ import type { HermesToolset } from '~/types/hermes'
 
 defineOptions({ name: 'SettingsTools' })
 
-const { request } = useHermes()
+const gateway = useGateway()
 const { isConfigured } = useConnection()
 const toast = useToast()
 const loading = ref(true)
@@ -17,10 +17,10 @@ async function load() {
   }
   loading.value = true
   try {
-    const payload = await request<HermesToolset[] | { data?: HermesToolset[], toolsets?: HermesToolset[] }>('/v1/toolsets')
-    toolsets.value = Array.isArray(payload)
-      ? payload
-      : (payload.toolsets || payload.data || [])
+    const payload = await gateway.request<HermesToolset[] | { toolsets?: HermesToolset[] }>('tools.list').catch(async () => {
+      return await gateway.request<HermesToolset[] | { toolsets?: HermesToolset[] }>('toolsets.list')
+    })
+    toolsets.value = Array.isArray(payload) ? payload : (payload.toolsets || [])
   } catch (error) {
     toast.add({ title: '无法加载工具集', description: String(error instanceof Error ? error.message : error), color: 'error' })
   } finally {

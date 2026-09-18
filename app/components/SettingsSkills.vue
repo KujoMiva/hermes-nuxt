@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { HermesSkill } from '~/types/hermes'
+import { asSkillList } from '~/utils/format'
 
 defineOptions({ name: 'SettingsSkills' })
 
-const { request } = useHermes()
+const gateway = useGateway()
 const { isConfigured } = useConnection()
 const toast = useToast()
 const loading = ref(true)
@@ -18,10 +19,7 @@ async function load() {
   }
   loading.value = true
   try {
-    const payload = await request<HermesSkill[] | { data?: HermesSkill[], skills?: HermesSkill[] }>('/v1/skills')
-    skills.value = Array.isArray(payload)
-      ? payload
-      : (payload.skills || payload.data || [])
+    skills.value = asSkillList(await gateway.request('skills.manage', { action: 'list' })) as HermesSkill[]
   } catch (error) {
     toast.add({ title: '无法加载技能', description: String(error instanceof Error ? error.message : error), color: 'error' })
   } finally {

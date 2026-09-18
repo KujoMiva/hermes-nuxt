@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import type { HermesJob, HermesMessage, HermesSession } from '~/types/hermes'
-import { HermesError } from '~/composables/useHermes'
-import { profileRequestHeaders } from '~/composables/useJobs'
 import { jobScheduleText } from '~/utils/schedule'
 import { fetchAllSessionMessages } from '~/utils/sessionMessages'
 
 definePageMeta({ layout: 'default' })
 
 const RUN_LIMIT = 50
-const SESSION_PAGE = 200
-const SESSION_SCAN_MAX = 1000
 
 interface HistoryEntry {
   id: string
@@ -21,13 +17,8 @@ interface HistoryEntry {
   output: string
 }
 
-interface CronRunsPayload {
-  runs?: HermesSession[]
-  data?: HermesSession[]
-}
-
 const route = useRoute()
-const { request } = useHermes()
+const gateway = useGateway()
 const { isConfigured } = useConnection()
 const jobs = useJobs()
 const chrome = useJobsChrome()
@@ -62,16 +53,6 @@ function parseCronSessionTime(sessionId: string, id: string) {
 
 function looksLikeCronOutput(text: string) {
   return /^#\s*Cron Job:/m.test(text) || /\*\*Job ID:\*\*/i.test(text)
-}
-
-function asSessions(payload: unknown): HermesSession[] {
-  if (Array.isArray(payload)) return payload as HermesSession[]
-  if (payload && typeof payload === 'object') {
-    const rec = payload as CronRunsPayload & { data?: HermesSession[] }
-    if (Array.isArray(rec.runs)) return rec.runs
-    if (Array.isArray(rec.data)) return rec.data
-  }
-  return []
 }
 
 function runTimeFor(session: HermesSession, id: string) {
@@ -224,40 +205,16 @@ function fromJobFallback(row: HermesJob): HistoryEntry | null {
   return toEntry(String(exec?.id || row.id), runTime, name, output, failed)
 }
 
-async function loadDashboardRuns(id: string, headers: Record<string, string>) {
-  try {
-    const payload = await request<CronRunsPayload>(`/api/cron/jobs/${encodeURIComponent(id)}/runs`, {
-      query: { limit: RUN_LIMIT },
-      extraHeaders: headers
-    })
-    if (payload && Array.isArray(payload.runs)) return payload.runs
-  } catch (error) {
-    // 远程网关没有 dashboard 的 /runs；其它错误同样降级到会话列表。
-    if (!(error instanceof HermesError)) throw error
-  }
-  return null
-}
-
-async function loadSessionsByPrefix(id: string, headers: Record<string, string>) {
-  const matched: HermesSession[] = []
-  for (let offset = 0; offset < SESSION_SCAN_MAX && matched.length < RUN_LIMIT; offset += SESSION_PAGE) {
-    const payload = await request<{ data?: HermesSession[], has_more?: boolean }>('/api/sessions', {
-      query: {
-        limit: SESSION_PAGE,
-        offset,
-        include_children: true,
-        source: 'cron'
-      },
-      extraHeaders: headers
-    })
-    const batch = asSessions(payload)
-    for (const session of batch) {
-      if (session.id && isCronSessionForJob(session.id, id)) matched.push(session)
-    }
-    if (!payload.has_more && batch.length < SESSION_PAGE) break
-    if (!batch.length) break
-  }
-  return matched
+async function loadCronSessions(id: string) {
+  const listed = await gateway.request<{ sessions?: HermesSession[] }>('session.list', {
+    limit: 200,
+    include_hidden: true
+  })
+  const prefix = cronSessionPrefix(id)
+  return (listed.sessions || []).filter(item =>
+    (item.source === 'cron' || isCronSessionForJob(item.id, id))
+    && String(item.id || '').startsWith(prefix)
+  )
 }
 
 function sortRuns(sessions: HermesSession[], id: string) {
@@ -274,12 +231,12 @@ function sortRuns(sessions: HermesSession[], id: string) {
   }).slice(0, RUN_LIMIT)
 }
 
-async function entryFromSession(session: HermesSession, row: HermesJob, headers: Record<string, string>) {
+async function entryFromSession(session: HermesSession, row: HermesJob) {
   const time = runTimeFor(session, row.id)
   const title = row.name?.trim() || session.title?.replace(/\s*\(FAILED\)\s*$/i, '').trim() || row.id
   const active = isRunActive(session)
   try {
-    const list = await fetchAllSessionMessages(request, session.id, headers)
+    const list = await fetchAllSessionMessages(gateway.request, session.id)
     const response = lastAssistantText(list)
     const prompt = firstUserText(list)
     const raw = response && looksLikeCronOutput(response) ? response : ''
@@ -327,17 +284,12 @@ async function loadHistory() {
       entries.value = []
       return
     }
-    const extra = profileRequestHeaders(current._profile)
     const canonicalId = current.id
-    const dashboardRuns = await loadDashboardRuns(canonicalId, extra)
-    const sessions = sortRuns(
-      dashboardRuns ?? await loadSessionsByPrefix(canonicalId, extra),
-      canonicalId
-    )
+    const sessions = sortRuns(await loadCronSessions(canonicalId), canonicalId)
     const rows: HistoryEntry[] = []
     for (let index = 0; index < sessions.length; index += 8) {
       const chunk = sessions.slice(index, index + 8)
-      const part = await Promise.all(chunk.map(session => entryFromSession(session, current, extra)))
+      const part = await Promise.all(chunk.map(session => entryFromSession(session, current)))
       rows.push(...part)
     }
     if (!rows.length) {

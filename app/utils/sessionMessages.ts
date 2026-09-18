@@ -4,45 +4,35 @@ import { extractImages, extractText } from './format'
 import { extractImageRefs } from './imageRefs'
 import { chatUid } from './chatRun'
 
-/** 远程网关一次 history 足够长；分页只是兼容旧调用。 */
-export const SESSION_MESSAGE_PAGE = 500
-const SESSION_MESSAGE_CAP = 8000
+type GatewayRequest = <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
 
-type HermesRequest = <T = unknown>(
-  path: string,
-  options?: {
-    query?: Record<string, string | number | boolean | undefined>
-    extraHeaders?: Record<string, string>
-  }
-) => Promise<T>
+function asRecord(value: unknown) {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {}
+}
 
-export async function fetchAllSessionMessages(
-  request: HermesRequest,
-  sessionId: string,
-  extraHeaders?: Record<string, string>
-) {
-  const rows: HermesMessage[] = []
-  let offset = 0
+export async function fetchAllSessionMessages(request: GatewayRequest, sessionId: string) {
+  const resumed = await request<{ session_id?: string, messages?: unknown[] }>('session.resume', {
+    session_id: sessionId
+  })
+  const history = resumed.messages?.length
+    ? resumed
+    : await request<{ messages?: unknown[] }>('session.history', {
+      session_id: resumed.session_id || sessionId
+    })
 
-  while (offset < SESSION_MESSAGE_CAP) {
-    const payload = await request<{ data?: HermesMessage[] }>(
-      `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
-      {
-        query: {
-          limit: SESSION_MESSAGE_PAGE,
-          offset,
-          order: 'oldest'
-        },
-        extraHeaders
-      }
-    )
-    const batch = payload.data || []
-    rows.push(...batch)
-    if (batch.length < SESSION_MESSAGE_PAGE) break
-    offset += SESSION_MESSAGE_PAGE
-  }
-
-  return rows
+  return (history.messages || []).map((item, index): HermesMessage => {
+    const rec = asRecord(item)
+    const role = rec.role === 'user' || rec.role === 'assistant' || rec.role === 'system' || rec.role === 'tool'
+      ? rec.role
+      : 'assistant'
+    return {
+      id: rec.row_id ?? rec.id ?? index,
+      role,
+      content: rec.text || rec.content || rec.context || '',
+      timestamp: rec.timestamp as string | number | undefined,
+      tool_name: typeof rec.name === 'string' ? rec.name : undefined
+    }
+  })
 }
 
 export function mapSessionMessage(message: HermesMessage): ChatThreadMessage | null {

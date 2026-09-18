@@ -21,6 +21,9 @@ const editorRef = ref<HTMLTextAreaElement | null>(null)
 const failed = ref<Record<string, boolean>>({})
 const stopLabel = computed(() => stopKindLabel(props.message.stopKind))
 const tools = computed(() => visibleTools(props.message.tools || []))
+const imageSrcs = computed(() =>
+  (props.message.images || []).map(src => chatMediaSrc(src)).filter(Boolean)
+)
 const canEdit = computed(() => props.message.role === 'user' && Boolean(props.message.content?.trim()))
 const canBranch = computed(() => props.message.role === 'assistant' && Boolean(props.message.content?.trim()) && !props.message.streaming)
 const canCommit = computed(() => Boolean(draft.value.trim()) && draft.value.trim() !== props.message.content.trim())
@@ -37,10 +40,6 @@ async function copy() {
   setTimeout(() => {
     copied.value = false
   }, 1500)
-}
-
-function srcOf(ref: string) {
-  return chatMediaSrc(ref)
 }
 
 function syncEditorHeight() {
@@ -159,14 +158,14 @@ async function confirmBranch() {
       :class="{ 'is-user': message.role === 'user' }"
     >
       <div
-        v-if="message.images?.length"
+        v-if="imageSrcs.length"
         class="bubble__images"
       >
         <img
-          v-for="(src, index) in message.images"
+          v-for="(src, index) in imageSrcs"
           v-show="!failed[src]"
           :key="index"
-          :src="srcOf(src)"
+          :src="src"
           alt="附件图片"
           @error="failed[src] = true"
         >

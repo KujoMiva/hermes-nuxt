@@ -30,10 +30,6 @@ function scheduleText(value: unknown) {
   return ''
 }
 
-export function profileRequestHeaders(_profileId?: string | null) {
-  return {}
-}
-
 export function useJobs() {
   const gateway = useGateway()
   const { isConfigured, profile } = useConnection()

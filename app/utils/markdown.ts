@@ -153,7 +153,6 @@ function safeImageSrc(raw: string) {
   const href = raw.trim()
   if (!href) return null
   if (/^data:image\//i.test(href)) return href
-  if (href.startsWith('/api/media')) return href
   if (/^https?:/i.test(href)) {
     const next = normalizeExternalUrl(href)
     return next || href
@@ -161,16 +160,8 @@ function safeImageSrc(raw: string) {
   return null
 }
 
-function mediaImageSrc(raw: string) {
-  const direct = safeImageSrc(raw)
-  if (direct) return direct
-  const path = raw.trim()
-  if (!path || path.includes('\0')) return null
-  return `/api/media?path=${encodeURIComponent(path)}`
-}
-
 function renderMediaLine(raw: string) {
-  const src = mediaImageSrc(raw)
+  const src = safeImageSrc(raw)
   if (!src) return `<div class="md-line md-media"><code>${escapeHtml(raw)}</code></div>`
   return `<div class="md-line md-media"><img src="${escapeHtml(src)}" alt=""></div>`
 }

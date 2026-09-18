@@ -30,6 +30,11 @@ export class JsonRpcGatewayError extends Error {
   }
 }
 
+export function isAbortError(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  return (error as { name?: string }).name === 'AbortError'
+}
+
 export class JsonRpcGatewayClient {
   private heartbeatSequence = 0
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { HermesJob, HermesSkill } from '~/types/hermes'
 import type { ScheduleKind } from '~/utils/schedule'
+import { asSkillList } from '~/utils/format'
 import {
   INTERVAL_UNITS,
   buildJobSchedule,
@@ -13,7 +14,7 @@ const props = defineProps<{
 }>()
 
 const { isConfigured } = useConnection()
-const { request } = useHermes()
+const gateway = useGateway()
 const profiles = useProfiles()
 const jobs = useJobs()
 const toast = useToast()
@@ -84,7 +85,7 @@ async function loadSkills() {
   }
   loadingSkills.value = true
   try {
-    catalog.value = asSkillList(await request('/v1/skills')) as HermesSkill[]
+    catalog.value = asSkillList(await gateway.request('skills.manage', { action: 'list' })) as HermesSkill[]
   } catch {
     catalog.value = []
   } finally {

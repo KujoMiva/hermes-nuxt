@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isAbortError } from '~/composables/useHermes'
+import { isAbortError } from '~/utils/gateway-client'
 import { CHAT_IMAGE_MAX_BYTES } from '~/utils/uploadImage'
 
 type DraftImage = {

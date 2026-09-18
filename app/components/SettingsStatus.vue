@@ -1,8 +1,8 @@
 <script setup lang="ts">
 defineOptions({ name: 'SettingsStatus' })
 
-const { request } = useHermes()
-const { capabilities, serverModel, testConnection, isConfigured } = useConnection()
+const gateway = useGateway()
+const { capabilities, serverModel, testConnection, isConfigured, session } = useConnection()
 const toast = useToast()
 const health = ref<Record<string, unknown> | null>(null)
 const detailed = ref<Record<string, unknown> | null>(null)
@@ -16,9 +16,12 @@ async function refresh() {
   loading.value = true
   try {
     await testConnection()
-    health.value = await request('/health')
+    health.value = {
+      status: 'ok',
+      version: session.value.version || 'remote-gateway'
+    }
     try {
-      detailed.value = await request('/health/detailed')
+      detailed.value = await gateway.request('setup.runtime_check') as Record<string, unknown>
     } catch {
       detailed.value = null
     }

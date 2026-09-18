@@ -18,8 +18,6 @@ const catalog = useModelCatalog()
 const profiles = useProfiles()
 const sessions = useSessions()
 const jobs = useJobs()
-const { request } = useHermes()
-const serverVersion = ref('')
 const countsReady = ref(false)
 const confirmLogout = ref(false)
 
@@ -38,15 +36,7 @@ onMounted(async () => {
     await Promise.allSettled([
       jobs.refresh(),
       catalog.refresh(),
-      profiles.refresh(),
-      request<{ version?: string }>('/health')
-        .then((health) => {
-          if (typeof health?.version === 'string' && health.version.trim()) {
-            const text = health.version.trim()
-            serverVersion.value = text.startsWith('v') || text.startsWith('V') ? text : `v${text}`
-          }
-        })
-        .catch(() => {})
+      profiles.refresh()
     ])
   }
   countsReady.value = true
@@ -62,7 +52,6 @@ const hostMode = computed(() => {
 const currentModel = computed(() => catalog.currentLabel.value)
 
 const hermesVersion = computed(() => {
-  if (serverVersion.value) return serverVersion.value
   const caps = capabilities.value
   if (!caps) return connected.value ? '就绪' : '—'
   if (typeof caps.version === 'string' && caps.version.trim()) {
