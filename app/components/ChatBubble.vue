@@ -31,12 +31,6 @@ const hasLaterTurns = computed(() => {
   return index < chat.messages.value.length - 1 || chat.busy.value
 })
 
-function hasTextSelection() {
-  if (!import.meta.client) return false
-  const selection = window.getSelection()
-  return Boolean(selection && !selection.isCollapsed && selection.toString().length > 0)
-}
-
 async function copy() {
   await navigator.clipboard.writeText(props.message.content || '')
   copied.value = true
@@ -58,7 +52,6 @@ function syncEditorHeight() {
 
 async function startEdit() {
   if (!canEdit.value || editing.value || saving.value) return
-  if (hasTextSelection()) return
   draft.value = props.message.content
   editing.value = true
   await nextTick()
@@ -212,24 +205,34 @@ async function confirmBranch() {
         </div>
       </div>
 
-      <button
+      <div
         v-else-if="message.role === 'user' && message.content"
-        type="button"
         class="bubble__user"
-        aria-label="点击编辑消息"
-        @click="startEdit"
       >
         {{ message.content }}
-        <span
-          class="bubble__edit-icon"
-          aria-hidden="true"
-        >
-          <UiIcon
-            name="i-lucide-pencil"
-            :size="12"
-          />
-        </span>
-      </button>
+      </div>
+
+      <div
+        v-if="message.role === 'user' && !editing && message.content"
+        class="bubble__copy"
+      >
+        <UiButton
+          icon="i-lucide-pencil"
+          color="neutral"
+          variant="ghost"
+          size="xs"
+          aria-label="编辑消息"
+          @click="startEdit"
+        />
+        <UiButton
+          :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
+          color="neutral"
+          variant="ghost"
+          size="xs"
+          :aria-label="copied ? '已复制' : '复制'"
+          @click="copy"
+        />
+      </div>
 
       <div
         v-else-if="message.role !== 'user'"
@@ -374,46 +377,16 @@ async function confirmBranch() {
 }
 
 .bubble__user {
-  position: relative;
   max-width: 100%;
   min-width: 0;
-  border: 1px solid transparent;
   border-radius: 1.125rem;
   background: var(--color-elevated);
-  padding: 0.65rem 1.85rem 0.65rem 1rem;
+  padding: 0.65rem 1rem;
   color: var(--color-text-strong);
-  font: inherit;
   font-size: 0.875rem;
   line-height: 1.45;
-  text-align: left;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  cursor: pointer;
-
-  &:hover,
-  &:focus-visible {
-    border-color: var(--color-border);
-  }
-}
-
-.bubble__edit-icon {
-  position: absolute;
-  right: 0.45rem;
-  bottom: 0.4rem;
-  display: flex;
-  color: var(--color-text-muted);
-  opacity: 1;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
-
-  @media (hover: hover) and (pointer: fine) {
-    opacity: 0;
-  }
-}
-
-.bubble__user:hover .bubble__edit-icon,
-.bubble__user:focus-visible .bubble__edit-icon {
-  opacity: 1;
 }
 
 .bubble__editor {
