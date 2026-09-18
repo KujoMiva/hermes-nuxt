@@ -368,10 +368,12 @@ async function confirmBranch() {
   margin-bottom: 0.5rem;
 
   img {
-    max-height: 10rem;
+    max-width: 16rem;
+    max-height: 12rem;
     border: 1px solid var(--color-border);
     border-radius: 0.75rem;
-    object-fit: cover;
+    object-fit: contain;
+    background: var(--color-elevated);
   }
 }
 

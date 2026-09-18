@@ -143,7 +143,7 @@ async function onSubmit() {
   if (!text.trim() && !drafts.length) return
   input.value = ''
 
-  const refs: string[] = []
+  const previews = drafts.map(item => item.preview)
   if (drafts.length) {
     uploading.value = true
     uploadIndex.value = 0
@@ -157,9 +157,8 @@ async function onSubmit() {
       }
       for (const [index, draft] of drafts.entries()) {
         uploadIndex.value = index + 1
-        refs.push(await uploadDraft(draft, loadedBytes))
+        await uploadDraft(draft, loadedBytes)
       }
-      for (const draft of drafts) URL.revokeObjectURL(draft.preview)
       images.value = []
     } catch (error) {
       if (isAbortError(error)) return
@@ -177,7 +176,7 @@ async function onSubmit() {
     }
   }
 
-  await chat.send(text, refs)
+  await chat.send(text, previews)
 }
 
 onBeforeUnmount(() => {

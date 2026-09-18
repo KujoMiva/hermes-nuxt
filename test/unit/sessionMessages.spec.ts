@@ -271,4 +271,19 @@ describe('mapSessionMessage', () => {
       tools: [{ id: 't1', name: 'search', status: 'completed' }]
     })
   })
+
+  it('lifts user @image directives into images and hides them from the bubble text', () => {
+    const path = String.raw`C:\Users\me\hermes\images\upload_1.jpg`
+    const row = mapSessionMessage({
+      id: 12,
+      role: 'user',
+      content: `测试一下识图\n@image:\`${path}\``,
+      timestamp: 1_700_000_000
+    })
+    expect(row).toMatchObject({
+      role: 'user',
+      content: '测试一下识图',
+      images: [path]
+    })
+  })
 })

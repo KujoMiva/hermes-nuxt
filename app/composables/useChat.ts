@@ -13,6 +13,7 @@ import { chatUid, sleep } from '~/utils/chatRun'
 import { isGenericModel } from '~/composables/useModelCatalog'
 import { isBusySessionModelSwitch, sessionModelSetValue } from '~/utils/modelSettings'
 import { isSubagentTool, isToolResultFailed } from '~/utils/toolRun'
+import { mapSessionMessage } from '~/utils/sessionMessages'
 import {
   appendReasoning,
   asReasoningText,
@@ -22,6 +23,14 @@ import {
   providerWaitText,
   splitReasoning
 } from '~/utils/thinking'
+
+function revokeBlobImages(rows: ChatThreadMessage[]) {
+  for (const row of rows) {
+    for (const src of row.images || []) {
+      if (src.startsWith('blob:')) URL.revokeObjectURL(src)
+    }
+  }
+}
 
 let eventsBound = false
 let historyLoad = 0
@@ -138,16 +147,17 @@ function mapHistoryMessages(raw: unknown[]): ChatThreadMessage[] {
       continue
     }
 
-    const rowId = asRowId(rec.row_id)
-    rows.push({
-      id: String(rowId ?? rec.row_id ?? rec.id ?? chatUid(role === 'user' ? 'u' : 'a')),
+    const mapped = mapSessionMessage({
+      id: rec.row_id ?? rec.id ?? chatUid(role === 'user' ? 'u' : 's'),
       role,
-      rowId,
-      content: String(rec.text || rec.content || ''),
-      reasoning: asReasoningText(rec.reasoning || rec.reasoning_content),
-      tools: [],
-      createdAt
+      content: rec.text ?? rec.content ?? '',
+      timestamp: typeof rec.timestamp === 'number' || typeof rec.timestamp === 'string'
+        ? rec.timestamp
+        : undefined,
+      reasoning: typeof rec.reasoning === 'string' ? rec.reasoning : undefined,
+      reasoning_content: typeof rec.reasoning_content === 'string' ? rec.reasoning_content : undefined
     })
+    if (mapped) rows.push(mapped)
   }
 
   const last = rows.at(-1)
@@ -482,6 +492,7 @@ export function useChatController() {
     const token = ++historyLoad
     sessionId.value = ''
     storedSessionId.value = id
+    revokeBlobImages(messages.value)
     messages.value = []
     approval.value = null
     pendingSteer.value = ''
@@ -533,34 +544,34 @@ export function useChatController() {
     onProgress?.({ percent: 30, loaded: 0, total: file.size })
     const content_base64 = await fileToBase64(file)
     onProgress?.({ percent: 70, loaded: file.size, total: file.size })
-    await gateway.request('image.attach_bytes', {
+    const attached = await gateway.request<{ path?: string, name?: string }>('image.attach_bytes', {
       session_id: sid,
       content_base64,
       filename: file.name
     })
     onProgress?.({ percent: 100, loaded: file.size, total: file.size })
-    return { ref: file.name }
+    return { ref: attached?.path || attached?.name || file.name }
   }
 
-  async function send(text: string, _images: string[] = []) {
+  async function send(text: string, images: string[] = []) {
     if (!isConfigured.value) {
       await navigateTo('/login')
       return
     }
     const trimmed = text.trim()
-    if (!trimmed && !_images.length) return
+    const imageSrcs = images.filter(Boolean)
+    if (!trimmed && !imageSrcs.length) return
     errorText.value = ''
     userStopped.value = false
     turnStopKind.value = ''
     const sid = await ensureDraft()
-    if (trimmed) {
-      messages.value = [...messages.value, {
-        id: chatUid('u'),
-        role: 'user',
-        content: trimmed,
-        createdAt: Date.now()
-      }]
-    }
+    messages.value = [...messages.value, {
+      id: chatUid('u'),
+      role: 'user',
+      content: trimmed,
+      ...(imageSrcs.length ? { images: imageSrcs } : {}),
+      createdAt: Date.now()
+    }]
     status.value = 'submitted'
     bindEvents()
     try {
@@ -850,6 +861,7 @@ export function useChatController() {
     historyLoad += 1
     sessionId.value = ''
     storedSessionId.value = ''
+    revokeBlobImages(messages.value)
     messages.value = []
     approval.value = null
     pendingSteer.value = ''

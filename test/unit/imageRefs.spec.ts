@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chatMediaSrc, extractImageRefs, unwrapImageRefValue } from '~/utils/imageRefs'
+import { chatMediaSrc, extractImageRefs, isGatewayImagePath, unwrapImageRefValue } from '~/utils/imageRefs'
 
 describe('unwrapImageRefValue', () => {
   it('strips wrapping quotes', () => {
@@ -23,14 +23,28 @@ describe('extractImageRefs', () => {
       refs: ['https://cdn.example/a.png', '/tmp/local.png']
     })
   })
+
+  it('unwraps quoted windows upload paths', () => {
+    const path = String.raw`C:\Users\KujoMiva\AppData\Local\hermes\images\upload_1.jpg`
+    expect(extractImageRefs(`测试一下识图\n@image:\`${path}\``)).toEqual({
+      cleanedText: '测试一下识图',
+      refs: [path]
+    })
+  })
 })
 
 describe('chatMediaSrc', () => {
-  it('only keeps http, data, and blob urls', () => {
+  it('keeps browser-safe urls and proxies gateway-local files', () => {
     expect(chatMediaSrc('https://cdn.example/a.png')).toBe('https://cdn.example/a.png')
     expect(chatMediaSrc('data:image/png;base64,abc')).toBe('data:image/png;base64,abc')
     expect(chatMediaSrc('blob:https://app/1')).toBe('blob:https://app/1')
-    expect(chatMediaSrc('/opt/data/cat.png')).toBe('')
-    expect(chatMediaSrc('/api/media?path=x')).toBe('')
+    expect(chatMediaSrc('/api/media?path=x')).toBe('/api/media?path=x')
+    expect(chatMediaSrc('/opt/data/cat.png')).toBe(`/api/media?path=${encodeURIComponent('/opt/data/cat.png')}`)
+    expect(chatMediaSrc(String.raw`C:\Users\me\hermes\images\a.jpg`)).toBe(
+      `/api/media?path=${encodeURIComponent(String.raw`C:\Users\me\hermes\images\a.jpg`)}`
+    )
+    expect(chatMediaSrc('relative.png')).toBe('')
+    expect(isGatewayImagePath('/opt/data/cat.png')).toBe(true)
+    expect(isGatewayImagePath('https://cdn.example/a.png')).toBe(false)
   })
 })
