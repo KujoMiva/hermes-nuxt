@@ -16,6 +16,8 @@ const {
 
 const sheet = ref<'model' | 'effort' | null>(null)
 const query = ref('')
+const expensiveConfirm = ref<{ id: string, provider: string, message: string } | null>(null)
+const confirmingExpensive = ref(false)
 
 const effortChip = computed(() => reasoningEffortTitle(reasoningEffort.value))
 
@@ -70,9 +72,27 @@ async function openSheet(next: 'model' | 'effort') {
   }
 }
 
-async function chooseModel(id: string, provider = '') {
-  await chat.setSessionModel(id, provider)
+async function chooseModel(id: string, provider = '', confirmExpensiveModel = false) {
+  const result = await chat.setSessionModel(id, provider, { confirmExpensiveModel })
+  if (result && typeof result === 'object' && result.confirmRequired) {
+    sheet.value = null
+    expensiveConfirm.value = { id, provider, message: result.confirmMessage }
+    return
+  }
+  if (result === false) return
+  expensiveConfirm.value = null
   sheet.value = null
+}
+
+async function confirmExpensiveModel() {
+  const pending = expensiveConfirm.value
+  if (!pending) return
+  confirmingExpensive.value = true
+  try {
+    await chooseModel(pending.id, pending.provider, true)
+  } finally {
+    confirmingExpensive.value = false
+  }
 }
 
 async function chooseEffort(id: ReasoningEffort) {
@@ -213,6 +233,17 @@ onMounted(() => {
         </button>
       </div>
     </UiSheet>
+
+    <UiConfirm
+      :open="Boolean(expensiveConfirm)"
+      title="确认使用该模型？"
+      :description="expensiveConfirm?.message"
+      confirm-label="仍然切换"
+      :loading="confirmingExpensive"
+      @update:open="value => { if (!value) expensiveConfirm = null }"
+      @confirm="confirmExpensiveModel"
+      @cancel="expensiveConfirm = null"
+    />
   </div>
 </template>
 

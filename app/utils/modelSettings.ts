@@ -96,3 +96,16 @@ export function staleAuxAssignments(tasks: AuxiliaryTaskAssignment[], mainProvid
 export function auxTaskLabel(key: string) {
   return AUX_TASKS.find(item => item.key === key)?.label || key
 }
+
+/** Gateway `config.set` has no `provider` field — flags live in `value`. */
+export function sessionModelSetValue(model: string, provider = '') {
+  const id = model.trim()
+  if (!id) return ''
+  const slug = provider.trim()
+  return slug ? `${id} --provider ${slug} --session` : `${id} --session`
+}
+
+export function isBusySessionModelSwitch(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return /session busy/i.test(message) && /switching models/i.test(message)
+}

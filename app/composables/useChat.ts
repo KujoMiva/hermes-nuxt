@@ -11,6 +11,7 @@ import {
 } from '~/utils/chatEdit'
 import { chatUid, sleep } from '~/utils/chatRun'
 import { isGenericModel } from '~/composables/useModelCatalog'
+import { isBusySessionModelSwitch, sessionModelSetValue } from '~/utils/modelSettings'
 import { isSubagentTool, isToolResultFailed } from '~/utils/toolRun'
 import {
   appendReasoning,
@@ -768,24 +769,50 @@ export function useChatController() {
     }
   }
 
-  async function setSessionModel(nextModel: string, nextProvider = '') {
+  async function setSessionModel(
+    nextModel: string,
+    nextProvider = '',
+    options: { confirmExpensiveModel?: boolean } = {}
+  ) {
+    const previousModel = sessionModel.value
+    const previousProvider = sessionProvider.value
     applySessionSelection(nextModel, nextProvider)
-    model.value = sessionModel.value
-    provider.value = sessionProvider.value
-    if (!sessionId.value) return
+    if (!sessionId.value) return true
+
+    const value = sessionModelSetValue(sessionModel.value, sessionProvider.value)
+    if (!value) {
+      applySessionSelection(previousModel, previousProvider)
+      return false
+    }
+
     try {
-      await gateway.request('config.set', {
+      const result = await gateway.request<{
+        confirm_message?: string
+        confirm_required?: boolean
+        warning?: string
+      }>('config.set', {
         key: 'model',
-        value: sessionModel.value,
+        value,
         session_id: sessionId.value,
-        ...(sessionProvider.value ? { provider: sessionProvider.value } : {})
+        ...(options.confirmExpensiveModel ? { confirm_expensive_model: true } : {})
       })
+      if (result?.confirm_required) {
+        applySessionSelection(previousModel, previousProvider)
+        return {
+          confirmRequired: true as const,
+          confirmMessage: result.confirm_message || result.warning || '该模型费用较高，确认切换？'
+        }
+      }
+      return true
     } catch (error) {
+      if (isBusySessionModelSwitch(error)) return true
+      applySessionSelection(previousModel, previousProvider)
       toast.add({
         title: '无法切换会话模型',
         description: error instanceof Error ? error.message : String(error),
         color: 'error'
       })
+      return false
     }
   }
 
