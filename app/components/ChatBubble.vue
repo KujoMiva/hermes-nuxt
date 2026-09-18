@@ -93,12 +93,9 @@ function srcOf(ref: string) {
             :live="Boolean(message.streaming && message.stopKind !== 'stopping')"
           />
         </div>
-        <div
+        <ChatWaitingFace
           v-else-if="message.streaming && !stopLabel && !message.reasoning && !tools.length"
-          class="bubble__dots"
-        >
-          <span /><span /><span />
-        </div>
+        />
         <p
           v-if="stopLabel && (!message.streaming || message.stopKind === 'stopping')"
           class="bubble__stop"
@@ -206,31 +203,6 @@ function srcOf(ref: string) {
   padding: 0.25rem;
 }
 
-.bubble__dots {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  height: 1.5rem;
-  padding-inline: 0.25rem;
-  color: var(--color-text-muted);
-
-  span {
-    width: 0.35rem;
-    height: 0.35rem;
-    border-radius: var(--radius-pill);
-    background: currentColor;
-    animation: bounce 0.9s infinite;
-
-    &:nth-child(2) {
-      animation-delay: 150ms;
-    }
-
-    &:nth-child(3) {
-      animation-delay: 300ms;
-    }
-  }
-}
-
 .bubble__copy {
   display: flex;
   align-items: center;
@@ -242,17 +214,5 @@ function srcOf(ref: string) {
   color: var(--color-text-muted);
   font-size: 0.75rem;
   line-height: 1.4;
-}
-
-@keyframes bounce {
-  0%,
-  80%,
-  100% {
-    transform: translateY(0);
-  }
-
-  40% {
-    transform: translateY(-3px);
-  }
 }
 </style>
