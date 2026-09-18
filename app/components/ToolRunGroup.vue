@@ -170,8 +170,6 @@ watch(() => props.tools.length, (count) => {
 }
 
 .tool-trail__detail {
-  overflow-x: auto;
-  max-height: 10rem;
   margin: 0.2rem 0 0.35rem;
   color: var(--color-text-muted);
   font-family: var(--font-mono);

@@ -87,7 +87,6 @@ async function openChildSession() {
 }
 
 .tool-card__body pre {
-  overflow-x: auto;
   margin: 0;
   color: var(--color-text-muted);
   font-family: var(--font-mono);
