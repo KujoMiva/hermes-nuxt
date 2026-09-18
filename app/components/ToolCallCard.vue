@@ -1,116 +1,112 @@
 <script setup lang="ts">
 import type { ChatToolEvent } from '~/types/hermes'
+import { formatShortDuration, prettyJson, subagentTitle, toolArgsLine } from '~/utils/format'
+import { formatToolCall, isSubagentTool, toolContext, toolElapsedMs } from '~/utils/toolRun'
 
 const props = defineProps<{
   tool: ChatToolEvent
 }>()
 
+const now = useNowTick(() => props.tool.status === 'running')
 const open = ref(props.tool.status === 'running')
 
 watch(() => props.tool.status, (status) => {
   if (status === 'running') open.value = true
 })
 
-const statusMeta = computed(() => {
-  if (props.tool.status === 'running') return { color: 'warning' as const, label: '执行中', icon: 'i-lucide-loader-circle' }
-  if (props.tool.status === 'failed') return { color: 'error' as const, label: '失败', icon: 'i-lucide-circle-alert' }
-  return { color: 'success' as const, label: '完成', icon: 'i-lucide-circle-check' }
+const title = computed(() => {
+  if (isSubagentTool(props.tool)) return subagentTitle(props.tool)
+  return formatToolCall(props.tool.name, toolContext(props.tool))
 })
+
+const elapsed = computed(() => formatShortDuration(toolElapsedMs(props.tool, now.value)))
+const detail = computed(() => {
+  if (props.tool.inlineDiff?.trim()) return props.tool.inlineDiff.trim()
+  if (props.tool.resultText?.trim()) return props.tool.resultText.trim()
+  const args = prettyJson(props.tool.args).trim()
+  if (args) return args
+  return toolArgsLine(props.tool.args, props.tool.preview || props.tool.summary || props.tool.goal)
+})
+
+async function openChildSession() {
+  const id = props.tool.childSessionId
+  if (!id) return
+  await navigateTo(`/chat/${id}`)
+}
 </script>
 
 <template>
-  <div class="tool-card">
-    <button
-      type="button"
-      class="tool-card__head"
-      @click="open = !open"
+  <div
+    class="tool-card"
+    :class="{ 'is-failed': tool.status === 'failed' }"
+    data-conversation-scaffold
+  >
+    <ChatScaffoldRow
+      :open="open"
+      :toggleable="Boolean(detail)"
+      @toggle="open = !open"
     >
-      <UiIcon
-        :name="statusMeta.icon"
-        :size="16"
-        :spin="tool.status === 'running'"
-      />
-      <span class="tool-card__name">{{ tool.name }}</span>
-      <UiBadge :color="statusMeta.color">
-        {{ statusMeta.label }}
-      </UiBadge>
-      <UiIcon
-        name="i-lucide-chevron-down"
-        :size="16"
-        class="tool-card__chevron"
-        :class="{ 'is-open': open }"
-      />
-    </button>
+      <span :class="{ 'is-shimmer': tool.status === 'running' }">{{ title }}</span>
+      <template
+        v-if="elapsed"
+        #trailing
+      >
+        {{ elapsed }}
+      </template>
+    </ChatScaffoldRow>
     <div
-      v-if="open"
+      v-if="open && detail"
       class="tool-card__body"
     >
-      <p
-        v-if="tool.preview"
-        class="tool-card__preview"
+      <pre>{{ detail }}</pre>
+      <button
+        v-if="tool.childSessionId && tool.status !== 'running'"
+        type="button"
+        class="tool-card__child"
+        @click="openChildSession"
       >
-        {{ tool.preview }}
-      </p>
-      <pre v-if="tool.args">{{ prettyJson(tool.args) }}</pre>
+        查看子代理记录
+      </button>
     </div>
   </div>
 </template>
 
 <style lang="scss" scoped>
 .tool-card {
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  background: color-mix(in srgb, var(--color-elevated) 60%, transparent);
-}
-
-.tool-card__head {
-  display: flex;
   width: 100%;
-  align-items: center;
-  gap: 0.5rem;
-  border: 0;
-  background: transparent;
-  padding: 0.5rem 0.75rem;
-  color: var(--color-text-muted);
-  font-size: 0.875rem;
-  text-align: start;
-}
-
-.tool-card__name {
   min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  color: var(--color-text-strong);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.tool-card__chevron {
-  transition: transform 0.15s ease;
-
-  &.is-open {
-    transform: rotate(180deg);
-  }
+.tool-card.is-failed :deep(.scaffold-row__label) {
+  color: var(--color-error);
 }
 
 .tool-card__body {
-  border-top: 1px solid var(--color-border);
-  padding: 0.5rem 0.75rem;
-}
-
-.tool-card__preview,
-.tool-card__body pre {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  white-space: pre-wrap;
+  margin-top: 0.2rem;
+  min-width: 0;
 }
 
 .tool-card__body pre {
   overflow-x: auto;
-  font-size: 12px;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
   line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-card__child {
+  display: inline-flex;
+  margin-top: 0.35rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--color-text-toned);
+  font-size: 0.75rem;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
 }
 </style>

@@ -70,6 +70,9 @@ export interface ChatToolEvent {
   kind?: 'tool' | 'thinking' | 'subagent'
   preview?: string
   args?: unknown
+  result?: unknown
+  resultText?: string
+  inlineDiff?: string
   goal?: string
   summary?: string
   childSessionId?: string
@@ -96,6 +99,9 @@ export interface ChatThreadMessage {
   content: string
   images?: string[]
   reasoning?: string
+  reasoningLive?: boolean
+  reasoningStartedAt?: number
+  reasoningEndedAt?: number
   tools?: ChatToolEvent[]
   streaming?: boolean
   stopKind?: ChatStopKind
@@ -176,12 +182,101 @@ export interface ModelOption {
   pricing?: unknown
 }
 
+export interface ModelCapabilities {
+  fast?: boolean
+  reasoning?: boolean
+  can_disable_reasoning?: boolean | null
+}
+
 export interface ModelProvider {
   id: string
   name?: string
   authenticated?: boolean
   isUserDefined?: boolean
+  isCurrent?: boolean
+  authType?: string
+  keyEnv?: string
+  apiUrl?: string
+  warning?: string
+  aliases?: string[]
   models?: ModelOption[]
+  capabilities?: Record<string, ModelCapabilities>
+}
+
+export interface ModelAssignmentRequest {
+  scope: 'main' | 'auxiliary'
+  provider: string
+  model: string
+  task?: string
+  reasoning_effort?: string | null
+  base_url?: string
+  api_key?: string
+  confirm_expensive_model?: boolean
+  profile?: string
+}
+
+export interface StaleAuxAssignment {
+  task: string
+  provider: string
+  model?: string
+}
+
+export interface ModelAssignmentResponse {
+  ok: boolean
+  scope?: string
+  provider?: string
+  model?: string
+  confirm_required?: boolean
+  confirm_message?: string
+  stale_aux?: StaleAuxAssignment[]
+  reset?: boolean
+}
+
+export interface AuxiliaryTaskAssignment {
+  task: string
+  provider: string
+  model: string
+  base_url?: string
+  reasoning_effort?: string | null
+  local_endpoint?: boolean
+}
+
+export interface AuxiliaryModelsResponse {
+  tasks: AuxiliaryTaskAssignment[]
+  main: { provider: string, model: string }
+}
+
+export interface CustomEndpoint {
+  id: string
+  name: string
+  base_url: string
+  model: string
+  models?: string[]
+  context_length?: number | null
+  discover_models?: boolean
+  has_api_key?: boolean
+  api_key_preview?: string | null
+  is_current?: boolean
+  source?: string
+}
+
+export interface CustomEndpointsResponse {
+  endpoints: CustomEndpoint[]
+  current?: { provider: string, model: string, base_url: string }
+  ok?: boolean
+  id?: string
+}
+
+export interface CustomEndpointUpdate {
+  id?: string
+  name: string
+  base_url: string
+  model: string
+  api_key?: string
+  context_length?: number
+  discover_models?: boolean
+  make_default?: boolean
+  models?: string[]
 }
 
 export interface Capabilities {

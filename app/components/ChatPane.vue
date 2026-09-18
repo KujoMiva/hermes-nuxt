@@ -68,7 +68,7 @@ watch(() => chat.messages.value.at(-1)?.tools?.length, () => {
 watch(() => {
   const last = chat.messages.value.at(-1)
   const tool = last?.tools?.at(-1)
-  return `${last?.reasoning || ''}\0${tool?.preview || ''}\0${tool?.status || ''}\0${last?.stopKind || ''}`
+  return `${last?.reasoning || ''}\0${last?.reasoningLive ? 1 : 0}\0${tool?.preview || ''}\0${tool?.status || ''}\0${last?.stopKind || ''}\0${chat.providerWait.value}`
 }, () => {
   followBottom()
 })
@@ -140,6 +140,12 @@ onBeforeUnmount(() => {
           v-memo="chatBubbleMemo(message)"
           :message="message"
         />
+        <p
+          v-if="chat.providerWait.value"
+          class="chat-pane__hint"
+        >
+          {{ chat.providerWait.value }}
+        </p>
         <p
           v-if="chat.errorText.value && !chat.liveHint.value && !chat.busy.value"
           class="chat-pane__error"

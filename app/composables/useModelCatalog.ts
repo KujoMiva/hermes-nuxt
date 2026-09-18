@@ -20,6 +20,27 @@ function asModel(entry: unknown, provider?: string): ModelOption | null {
   }
 }
 
+function asStringList(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value.map(item => String(item || '').trim()).filter(Boolean)
+}
+
+function asCapabilities(value: unknown) {
+  if (!value || typeof value !== 'object') return undefined
+  const rec = value as Record<string, unknown>
+  const result: ModelProvider['capabilities'] = {}
+  for (const [modelId, caps] of Object.entries(rec)) {
+    if (!caps || typeof caps !== 'object') continue
+    const row = caps as Record<string, unknown>
+    result[modelId] = {
+      fast: Boolean(row.fast),
+      reasoning: row.reasoning !== false,
+      can_disable_reasoning: typeof row.can_disable_reasoning === 'boolean' ? row.can_disable_reasoning : null
+    }
+  }
+  return Object.keys(result).length ? result : undefined
+}
+
 function normalizeProviders(payload: unknown): ModelProvider[] {
   if (!payload || typeof payload !== 'object') return []
   const rec = payload as Record<string, unknown>
@@ -34,7 +55,14 @@ function normalizeProviders(payload: unknown): ModelProvider[] {
       name: String(row.name || row.label || id),
       authenticated: Boolean(row.authenticated ?? row.configured ?? true),
       isUserDefined: Boolean(row.is_user_defined),
-      models: modelsList.map(modelRow => asModel(modelRow, id)).filter((row): row is ModelOption => Boolean(row))
+      isCurrent: Boolean(row.is_current),
+      authType: typeof row.auth_type === 'string' ? row.auth_type : undefined,
+      keyEnv: typeof row.key_env === 'string' ? row.key_env : undefined,
+      apiUrl: typeof row.api_url === 'string' ? row.api_url : undefined,
+      warning: typeof row.warning === 'string' ? row.warning : undefined,
+      aliases: asStringList(row.aliases),
+      models: modelsList.map(modelRow => asModel(modelRow, id)).filter((row): row is ModelOption => Boolean(row)),
+      capabilities: asCapabilities(row.capabilities)
     }
   }).filter(item => item.id)
 }
@@ -87,7 +115,10 @@ export function useModelCatalog() {
     catalogRefresh = (async () => {
       loading.value = true
       try {
-        const payload = await gateway.request<Record<string, unknown>>('model.options', { refresh: force })
+        const payload = await gateway.request<Record<string, unknown>>('model.options', {
+          refresh: force,
+          include_unconfigured: true
+        })
         providers.value = normalizeProviders(payload)
         const rec = payload as Record<string, unknown>
         serverDefault.value = String(rec.current_model || rec.default || rec.model || model.value || '')

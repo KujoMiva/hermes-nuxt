@@ -87,3 +87,36 @@ pre {
 .safe-bottom {
   padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
 }
+
+[data-conversation-scaffold] {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.35rem;
+  opacity: 0.67;
+  transition: opacity 120ms ease-out;
+}
+
+[data-conversation-scaffold]:is(:hover, :has(:focus-visible)) {
+  opacity: 1;
+}
+
+.is-shimmer {
+  animation: scaffold-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes scaffold-pulse {
+  0%,
+  100% {
+    color: var(--color-text-toned);
+  }
+
+  50% {
+    color: var(--color-text-dimmed);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-shimmer {
+    animation: none;
+  }
+}

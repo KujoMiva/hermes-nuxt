@@ -302,13 +302,13 @@ const shortcuts = computed(() => [
       </SettingsRow>
       <SettingsRow
         icon="i-lucide-list"
-        title="收起执行详情"
-        description="外面只显示正在执行的，点开可看全部"
+        title="收起工具调用详情"
+        description="折叠后只保留一行摘要，点开再看每一步"
       >
         <template #trailing>
           <UiSwitch
             v-model="collapseDetails"
-            aria-label="收起执行详情"
+            aria-label="收起工具调用详情"
           />
         </template>
       </SettingsRow>
@@ -327,7 +327,7 @@ const shortcuts = computed(() => [
       <SettingsRow
         icon="i-lucide-cpu"
         title="模型"
-        :description="currentModel"
+        :description="currentModel === '默认模型' ? '配置默认模型、密钥与端点' : currentModel"
         to="/settings?tab=models"
       />
       <SettingsRow

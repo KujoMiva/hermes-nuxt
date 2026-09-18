@@ -2,6 +2,7 @@
 import type { ChatThreadMessage } from '~/types/hermes'
 import { chatMediaSrc } from '~/utils/imageRefs'
 import { stopKindLabel } from '~/utils/chatRun'
+import { visibleTools } from '~/utils/toolRun'
 
 const props = defineProps<{
   message: ChatThreadMessage
@@ -10,6 +11,7 @@ const props = defineProps<{
 const copied = ref(false)
 const failed = ref<Record<string, boolean>>({})
 const stopLabel = computed(() => stopKindLabel(props.message.stopKind))
+const tools = computed(() => visibleTools(props.message.tools || []))
 
 async function copy() {
   await navigator.clipboard.writeText(props.message.content || '')
@@ -68,9 +70,18 @@ function srcOf(ref: string) {
         v-else-if="message.role !== 'user'"
         class="bubble__assistant"
       >
+        <ThinkingDisclosure
+          v-if="message.reasoning"
+          :text="message.reasoning"
+          :pending="Boolean(message.reasoningLive)"
+          :started-at="message.reasoningStartedAt"
+          :ended-at="message.reasoningEndedAt"
+        />
+
         <ToolRunSummary
-          v-if="message.tools?.length"
-          :tools="message.tools"
+          v-if="tools.length"
+          :tools="tools"
+          :live="Boolean(message.streaming)"
         />
 
         <div
@@ -83,7 +94,7 @@ function srcOf(ref: string) {
           />
         </div>
         <div
-          v-else-if="message.streaming && !stopLabel"
+          v-else-if="message.streaming && !stopLabel && !message.reasoning && !tools.length"
           class="bubble__dots"
         >
           <span /><span /><span />
@@ -186,7 +197,7 @@ function srcOf(ref: string) {
   min-width: 0;
   width: 100%;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
 .bubble__md {

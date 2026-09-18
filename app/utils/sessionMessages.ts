@@ -179,11 +179,13 @@ export function chatBubbleMemo(message: ChatThreadMessage) {
   let toolKey = ''
   if (tools?.length) {
     for (const tool of tools) {
-      toolKey += `${tool.id}\0${tool.status}\0${tool.kind || ''}\0${tool.preview || ''}\0${tool.summary || ''}\0${tool.goal || ''}\n`
+      toolKey += `${tool.id}\0${tool.status}\0${tool.kind || ''}\0${tool.preview || ''}\0${tool.summary || ''}\0${tool.goal || ''}\0${tool.endedAt || ''}\n`
     }
   }
   return [
     message.content,
+    message.reasoning || '',
+    message.reasoningLive ? 1 : 0,
     message.streaming ? 1 : 0,
     message.stopKind || '',
     message.images?.join('\0') || '',

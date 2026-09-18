@@ -273,7 +273,7 @@ export function subagentTitle(tool: { taskIndex?: number, taskCount?: number }) 
   return `子代理 ${n}/${count}`
 }
 
-function parseToolArgs(value: unknown): Record<string, unknown> | null {
+export function parseToolArgs(value: unknown): Record<string, unknown> | null {
   if (value == null || value === '') return null
   if (typeof value === 'string') {
     try {
