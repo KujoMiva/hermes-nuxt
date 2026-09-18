@@ -8,6 +8,8 @@ const EMPTY_THINKING_PLACEHOLDER_RE
 
 export const REASONING_CHAR_CAP = 80_000
 
+const REASONING_TAGS = ['think', 'thinking', 'reasoning', 'thought', 'REASONING_SCRATCHPAD'] as const
+
 export function asReasoningText(value: unknown): string {
   if (typeof value === 'string') return value
   if (Array.isArray(value)) {
@@ -44,13 +46,63 @@ export function appendReasoning(current: string, delta: string): string {
   return next.length > REASONING_CHAR_CAP ? next.slice(-60_000) : next
 }
 
-export function mergeReasoningAvailable(current: string, incoming: string): string {
+export function mergeReasoningAvailable(current: string, incoming: string) {
   if (!incoming) return current
   if (!current) return incoming
   if (incoming.startsWith(current) || current.startsWith(incoming)) {
     return incoming.length >= current.length ? incoming : current
   }
-  return incoming
+  return current
+}
+
+export function isReplyEcho(reasoning: string, content: string) {
+  const thought = reasoning.trim()
+  const reply = content.trim()
+  return Boolean(thought && reply && (reply.startsWith(thought) || thought.startsWith(reply)))
+}
+
+export function splitReasoning(input: string) {
+  let text = input
+  const parts: string[] = []
+
+  for (const tag of REASONING_TAGS) {
+    const paired = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>\\s*`, 'gi')
+    text = text.replace(paired, (_match, inner: string) => {
+      const trimmed = inner.trim()
+      if (trimmed) parts.push(trimmed)
+      return ''
+    })
+    const unclosed = new RegExp(`^\\s*<${tag}>([\\s\\S]*)$`, 'i')
+    text = text.replace(unclosed, (_match, inner: string) => {
+      const trimmed = inner.trim()
+      if (trimmed) parts.push(trimmed)
+      return ''
+    })
+  }
+
+  return {
+    reasoning: parts.join('\n\n').trim(),
+    text: text.trim()
+  }
+}
+
+export function finalizeAssistantText(input: {
+  content?: string
+  payloadReasoning?: unknown
+  payloadText?: unknown
+  streamedReasoning?: string
+}) {
+  const raw = typeof input.payloadText === 'string' && input.payloadText
+    ? input.payloadText
+    : (input.content || '')
+  const split = splitReasoning(raw)
+  const content = split.text || raw
+  const fromPayload = coerceThinkingText(input.payloadReasoning)
+  const streamed = (input.streamedReasoning || '').trim()
+  const seed = isReplyEcho(streamed, content) ? '' : streamed
+  const reasoning = mergeReasoningAvailable(seed, fromPayload || split.reasoning)
+
+  return { content, reasoning }
 }
 
 export function thoughtLabel(pending: boolean, durationMs?: number | null): string {

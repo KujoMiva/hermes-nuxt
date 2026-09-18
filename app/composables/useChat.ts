@@ -17,8 +17,10 @@ import {
   appendReasoning,
   asReasoningText,
   coerceThinkingText,
+  finalizeAssistantText,
   mergeReasoningAvailable,
-  providerWaitText
+  providerWaitText,
+  splitReasoning
 } from '~/utils/thinking'
 
 let eventsBound = false
@@ -78,12 +80,14 @@ function mapHistoryMessages(raw: unknown[]): ChatThreadMessage[] {
       }
     }
     const rowId = asRowId(rec.row_id)
+    const rawContent = String(rec.text || rec.content || '')
+    const split = splitReasoning(rawContent)
     return {
       id: String(rowId ?? rec.row_id ?? rec.id ?? chatUid('a')),
       role: 'assistant',
       rowId,
-      content: String(rec.text || rec.content || ''),
-      reasoning: asReasoningText(rec.reasoning || rec.reasoning_content || rec.reasoning_details),
+      content: split.text || rawContent,
+      reasoning: asReasoningText(rec.reasoning || rec.reasoning_content || rec.reasoning_details) || split.reasoning,
       tools: fromCalls,
       createdAt
     }
@@ -258,11 +262,20 @@ export function useChatController() {
     const delta = coerceThinkingText(text)
     if (!delta) return
     const current = messages.value.find(item => item.id === assistantId.value) || appendAssistant()
-    const next = replace
-      ? mergeReasoningAvailable(current.reasoning || '', delta)
-      : appendReasoning(current.reasoning || '', delta)
+    if (replace) {
+      if ((current.content || '').trim() && !(current.reasoning || '').trim()) return
+      const next = mergeReasoningAvailable(current.reasoning || '', delta)
+      if (next === (current.reasoning || '')) return
+      patchAssistant(current.id, {
+        reasoning: next,
+        reasoningLive: true,
+        reasoningStartedAt: current.reasoningStartedAt || Date.now(),
+        streaming: true
+      })
+      return
+    }
     patchAssistant(current.id, {
-      reasoning: next,
+      reasoning: appendReasoning(current.reasoning || '', delta),
       reasoningLive: true,
       reasoningStartedAt: current.reasoningStartedAt || Date.now(),
       streaming: true
@@ -301,18 +314,22 @@ export function useChatController() {
       }
     })
 
-    gateway.on<{ text?: string, error?: string, status?: string }>('message.complete', (event) => {
+    gateway.on<{ text?: string, error?: string, status?: string, reasoning?: string }>('message.complete', (event) => {
       if (!sameSession(event.session_id)) return
       status.value = 'ready'
       clearProviderWait()
       const current = messages.value.find(item => item.id === assistantId.value)
       if (current) {
-        const text = typeof event.payload?.text === 'string' && event.payload.text
-          ? event.payload.text
-          : current.content
+        const finalized = finalizeAssistantText({
+          content: current.content,
+          payloadText: event.payload?.text,
+          payloadReasoning: event.payload?.reasoning,
+          streamedReasoning: current.reasoning
+        })
         patchAssistant(current.id, {
           ...sealReasoning(current),
-          content: text,
+          content: finalized.content,
+          reasoning: finalized.reasoning,
           streaming: false,
           tools: (current.tools || []).map(tool => (
             tool.status === 'running'
