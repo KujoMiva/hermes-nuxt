@@ -1,0 +1,80 @@
+import { describe, expect, it } from 'vitest'
+import type { ChatThreadMessage } from '~/types/hermes'
+import {
+  applySurvivorRowIdMap,
+  asRowId,
+  freezeInterruptedMessages,
+  isSessionBusyError,
+  truncateSubmitParams,
+  visibleUserOrdinal
+} from '~/utils/chatEdit'
+
+function message(
+  partial: Partial<ChatThreadMessage> & Pick<ChatThreadMessage, 'id' | 'role'>
+): ChatThreadMessage {
+  return {
+    content: '',
+    createdAt: 1,
+    ...partial
+  }
+}
+
+describe('asRowId', () => {
+  it('accepts positive integers only', () => {
+    expect(asRowId(3)).toBe(3)
+    expect(asRowId('12')).toBe(12)
+    expect(asRowId(0)).toBeUndefined()
+    expect(asRowId('x')).toBeUndefined()
+  })
+})
+
+describe('visibleUserOrdinal', () => {
+  it('counts user turns before the index', () => {
+    const rows = [
+      message({ id: 'u1', role: 'user' }),
+      message({ id: 'a1', role: 'assistant' }),
+      message({ id: 'u2', role: 'user' })
+    ]
+    expect(visibleUserOrdinal(rows, 0)).toBe(0)
+    expect(visibleUserOrdinal(rows, 2)).toBe(1)
+  })
+})
+
+describe('truncateSubmitParams', () => {
+  it('only emits truncate flags for a durable row id', () => {
+    expect(truncateSubmitParams(undefined)).toEqual({})
+    expect(truncateSubmitParams(8)).toEqual({
+      confirm_truncate: true,
+      truncate_before_row_id: 8,
+      confirm_empty_truncate: true
+    })
+  })
+})
+
+describe('applySurvivorRowIdMap', () => {
+  it('rewrites matching row ids', () => {
+    const rows = [
+      message({ id: 'u1', role: 'user', rowId: 1 }),
+      message({ id: 'a1', role: 'assistant', rowId: 2 })
+    ]
+    expect(applySurvivorRowIdMap(rows, { 1: 10, 2: 11 }).map(item => item.rowId)).toEqual([10, 11])
+  })
+})
+
+describe('freezeInterruptedMessages', () => {
+  it('clears live flags and marks stopping as interrupted', () => {
+    const rows = freezeInterruptedMessages([
+      message({ id: 'a1', role: 'assistant', streaming: true, stopKind: 'stopping' }),
+      message({ id: 'a2', role: 'assistant', content: 'done' })
+    ])
+    expect(rows[0]).toMatchObject({ streaming: false, stopKind: 'interrupted' })
+    expect(rows[1]?.stopKind).toBeUndefined()
+  })
+})
+
+describe('isSessionBusyError', () => {
+  it('detects gateway busy text', () => {
+    expect(isSessionBusyError(new Error('Session busy'))).toBe(true)
+    expect(isSessionBusyError('nope')).toBe(false)
+  })
+})
