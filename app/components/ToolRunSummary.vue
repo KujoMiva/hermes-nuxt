@@ -5,6 +5,7 @@ import { splitRunItems, visibleTools } from '~/utils/toolRun'
 const props = defineProps<{
   tools: ChatToolEvent[]
   live?: boolean
+  embedded?: boolean
 }>()
 
 const blocks = computed(() => {
@@ -42,6 +43,7 @@ const blocks = computed(() => {
         v-if="block.kind === 'run'"
         :tools="block.tools"
         :live="block.live"
+        :embedded="embedded"
       />
       <ToolCallCard
         v-else

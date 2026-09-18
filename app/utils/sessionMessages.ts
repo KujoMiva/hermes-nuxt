@@ -1,4 +1,10 @@
 import type { ChatThreadMessage, ChatToolEvent, HermesMessage } from '~/types/hermes'
+import {
+  mergePartLists,
+  messageParts,
+  partsKey,
+  withParts
+} from './assistantParts'
 import { asRowId } from './chatEdit'
 import { extractImages, extractText } from './format'
 import { extractImageRefs } from './imageRefs'
@@ -141,14 +147,51 @@ function sameTools(left?: ChatToolEvent[], right?: ChatToolEvent[]) {
   return true
 }
 
+function assistantHasTools(message: ChatThreadMessage) {
+  return Boolean(message.tools?.some(tool => tool.kind !== 'thinking'))
+}
+
+/** Desktop hydration merges consecutive assistant rows in a tool-calling turn into one bubble. */
+export function shouldMergeAssistants(left: ChatThreadMessage, right: ChatThreadMessage) {
+  if (left.role !== 'assistant' || right.role !== 'assistant') return false
+  if (!(left.content || '').trim()) return true
+  return assistantHasTools(left) || assistantHasTools(right)
+}
+
+export function mergeAssistantMessages(left: ChatThreadMessage, right: ChatThreadMessage): ChatThreadMessage {
+  return withParts({
+    ...left,
+    images: [...new Set([...(left.images || []), ...(right.images || [])])],
+    streaming: Boolean(right.streaming || left.streaming),
+    stopKind: right.stopKind || left.stopKind,
+    rowId: right.rowId ?? left.rowId
+  }, mergePartLists(messageParts(left), messageParts(right)))
+}
+
+export function mergeAssistantTurns(messages: ChatThreadMessage[]) {
+  const out: ChatThreadMessage[] = []
+  for (const row of messages) {
+    const last = out.at(-1)
+    if (last && shouldMergeAssistants(last, row)) {
+      out[out.length - 1] = mergeAssistantMessages(last, row)
+      continue
+    }
+    out.push(row)
+  }
+  return out
+}
+
 function sameFoldedMessage(left: ChatThreadMessage, right: ChatThreadMessage) {
   return left.role === right.role
     && left.content === right.content
+    && left.reasoning === right.reasoning
+    && left.reasoningLive === right.reasoningLive
     && left.streaming === right.streaming
     && left.stopKind === right.stopKind
     && left.createdAt === right.createdAt
     && sameStrings(left.images, right.images)
     && sameTools(left.tools, right.tools)
+    && partsKey(left.parts) === partsKey(right.parts)
 }
 
 export function reuseFoldedMessages(previous: ChatThreadMessage[], next: ChatThreadMessage[]) {
@@ -183,7 +226,8 @@ export function chatBubbleMemo(message: ChatThreadMessage) {
     message.streaming ? 1 : 0,
     message.stopKind || '',
     message.images?.join('\0') || '',
-    toolKey
+    toolKey,
+    partsKey(message.parts)
   ]
 }
 

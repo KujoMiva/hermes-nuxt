@@ -2,6 +2,7 @@
 import type { ChatToolEvent } from '~/types/hermes'
 import { formatShortDuration, prettyJson, subagentTitle, toolArgsLine } from '~/utils/format'
 import { formatToolCall, isSubagentTool, toolContext, toolElapsedMs } from '~/utils/toolRun'
+import { toolRowIcon } from '~/utils/toolIcon'
 
 const props = defineProps<{
   tool: ChatToolEvent
@@ -46,7 +47,17 @@ async function openChildSession() {
       :toggleable="Boolean(detail)"
       @toggle="open = !open"
     >
-      <span :class="{ 'is-shimmer': tool.status === 'running' }">{{ title }}</span>
+      <span
+        class="tool-card__title"
+        :class="{ 'is-shimmer': tool.status === 'running' }"
+      >
+        <UiIcon
+          :name="toolRowIcon(tool)"
+          :size="14"
+          :spin="tool.status === 'running'"
+        />
+        {{ title }}
+      </span>
       <template
         v-if="elapsed"
         #trailing
@@ -79,6 +90,22 @@ async function openChildSession() {
 
 .tool-card.is-failed :deep(.scaffold-row__label) {
   color: var(--color-error);
+}
+
+.tool-card.is-failed .tool-card__title :deep(.ui-icon) {
+  color: var(--color-error);
+}
+
+.tool-card__title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+
+  :deep(.ui-icon) {
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+  }
 }
 
 .tool-card__body {

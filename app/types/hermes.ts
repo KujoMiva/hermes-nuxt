@@ -62,6 +62,27 @@ export interface HermesMessage {
   reasoning_content?: string
 }
 
+export interface ChatReasoningPart {
+  type: 'reasoning'
+  text: string
+  live?: boolean
+  startedAt?: number
+  endedAt?: number
+}
+
+export interface ChatTextPart {
+  type: 'text'
+  text: string
+  live?: boolean
+}
+
+export interface ChatToolPart {
+  type: 'tool'
+  tool: ChatToolEvent
+}
+
+export type ChatMessagePart = ChatReasoningPart | ChatTextPart | ChatToolPart
+
 export interface ChatToolEvent {
   id: string
   name: string
@@ -104,6 +125,8 @@ export interface ChatThreadMessage {
   reasoningStartedAt?: number
   reasoningEndedAt?: number
   tools?: ChatToolEvent[]
+  /** Chronological reasoning / narration / tool segments for one assistant turn. */
+  parts?: ChatMessagePart[]
   streaming?: boolean
   stopKind?: ChatStopKind
   createdAt: number

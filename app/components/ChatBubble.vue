@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { ChatThreadMessage } from '~/types/hermes'
+import { assistantBlocks } from '~/utils/assistantParts'
 import { chatMediaSrc } from '~/utils/imageRefs'
 import { stopKindLabel } from '~/utils/chatRun'
-import { visibleTools } from '~/utils/toolRun'
 
 const props = defineProps<{
   message: ChatThreadMessage
@@ -20,7 +20,8 @@ const draft = ref('')
 const editorRef = ref<HTMLTextAreaElement | null>(null)
 const failed = ref<Record<string, boolean>>({})
 const stopLabel = computed(() => stopKindLabel(props.message.stopKind))
-const tools = computed(() => visibleTools(props.message.tools || []))
+const blocks = computed(() => assistantBlocks(props.message))
+const lastBlockIndex = computed(() => blocks.value.length - 1)
 const imageSrcs = computed(() =>
   (props.message.images || []).map(src => chatMediaSrc(src)).filter(Boolean)
 )
@@ -237,31 +238,43 @@ async function confirmBranch() {
         v-else-if="message.role !== 'user'"
         class="bubble__assistant"
       >
-        <ThinkingDisclosure
-          v-if="message.reasoning"
-          :text="message.reasoning"
-          :pending="Boolean(message.reasoningLive)"
-          :started-at="message.reasoningStartedAt"
-          :ended-at="message.reasoningEndedAt"
-        />
-
-        <ToolRunSummary
-          v-if="tools.length"
-          :tools="tools"
-          :live="Boolean(message.streaming)"
-        />
-
-        <div
-          v-if="message.content"
-          class="bubble__md"
+        <template
+          v-for="(block, index) in blocks"
+          :key="block.key"
         >
-          <MarkdownContent
-            :source="message.content"
-            :live="Boolean(message.streaming && message.stopKind !== 'stopping')"
+          <ThinkingDisclosure
+            v-if="block.type === 'reasoning'"
+            :text="block.part.text"
+            :pending="Boolean(block.part.live)"
+            :started-at="block.part.startedAt"
+            :ended-at="block.part.endedAt"
           />
-        </div>
+
+          <ToolCallShelf
+            v-else-if="block.type === 'shelf'"
+            :segments="block.segments"
+            :tools="block.tools"
+            :live="Boolean(message.streaming && (index === lastBlockIndex || block.tools.some(item => item.status === 'running')))"
+          />
+
+          <ToolRunSummary
+            v-else-if="block.type === 'tools'"
+            :tools="block.tools"
+            :live="Boolean(message.streaming && (index === lastBlockIndex || block.tools.some(item => item.status === 'running')))"
+          />
+
+          <div
+            v-else-if="block.type === 'text' && block.part.text"
+            class="bubble__md"
+          >
+            <MarkdownContent
+              :source="block.part.text"
+              :live="Boolean(message.streaming && message.stopKind !== 'stopping' && index === lastBlockIndex)"
+            />
+          </div>
+        </template>
         <ChatWaitingFace
-          v-else-if="message.streaming && !stopLabel && !message.reasoning && !tools.length"
+          v-if="message.streaming && !stopLabel && !blocks.length"
         />
         <p
           v-if="stopLabel && (!message.streaming || message.stopKind === 'stopping')"

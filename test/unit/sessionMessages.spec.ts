@@ -5,8 +5,10 @@ import {
   fetchAllSessionMessages,
   foldTurnTools,
   mapSessionMessage,
+  mergeAssistantTurns,
   reuseFoldedMessages
 } from '~/utils/sessionMessages'
+import { joinAssistantText } from '~/utils/assistantParts'
 
 function message(
   partial: Partial<ChatThreadMessage> & Pick<ChatThreadMessage, 'id' | 'role'>
@@ -254,6 +256,14 @@ describe('fetchAllSessionMessages', () => {
   })
 })
 
+describe('joinAssistantText', () => {
+  it('keeps a later superset and concatenates distinct narration', () => {
+    expect(joinAssistantText('我查一下。', '我查一下。\n\n结果是 3:1')).toBe('我查一下。\n\n结果是 3:1')
+    expect(joinAssistantText('我查一下。', '结果是 3:1')).toBe('我查一下。\n\n结果是 3:1')
+    expect(joinAssistantText('hello', '')).toBe('hello')
+  })
+})
+
 describe('mapSessionMessage', () => {
   it('drops tool roles and copies assistant tool calls', () => {
     expect(mapSessionMessage({ role: 'tool', content: 'ignored' })).toBeNull()
@@ -285,5 +295,72 @@ describe('mapSessionMessage', () => {
       content: '测试一下识图',
       images: [path]
     })
+  })
+})
+
+describe('mergeAssistantTurns', () => {
+  it('joins consecutive tool-calling assistants into one bubble', () => {
+    const first = tool({ id: 't1', name: 'read_file' })
+    const second = tool({ id: 't2', name: 'web_search' })
+    const merged = mergeAssistantTurns([
+      message({ id: 'u1', role: 'user', content: '最近一场' }),
+      message({
+        id: 'a1',
+        role: 'assistant',
+        content: '我查一下最新一场比赛的结果。',
+        reasoning: 'first thought',
+        tools: [first]
+      }),
+      message({
+        id: 'a2',
+        role: 'assistant',
+        content: '最近一场：JDG 3:1 WE',
+        reasoning: 'second thought',
+        tools: [second]
+      })
+    ])
+
+    expect(merged.map(item => item.id)).toEqual(['u1', 'a1'])
+    expect(merged[1]).toMatchObject({
+      id: 'a1',
+      content: '我查一下最新一场比赛的结果。\n\n最近一场：JDG 3:1 WE',
+      reasoning: 'first thought\n\nsecond thought'
+    })
+    expect(merged[1]?.tools?.map(item => item.id)).toEqual(['t1', 't2'])
+    expect(merged[1]?.parts?.map(item => item.type)).toEqual([
+      'reasoning',
+      'text',
+      'tool',
+      'reasoning',
+      'text',
+      'tool'
+    ])
+    expect(merged[1]?.parts?.filter(item => item.type === 'text').map(item => item.text)).toEqual([
+      '我查一下最新一场比赛的结果。',
+      '最近一场：JDG 3:1 WE'
+    ])
+  })
+
+  it('keeps a later reply that already includes the interim text', () => {
+    const call = tool({ id: 't1', name: 'web_search' })
+    const merged = mergeAssistantTurns([
+      message({ id: 'a1', role: 'assistant', content: '我查一下。', tools: [call] }),
+      message({ id: 'a2', role: 'assistant', content: '我查一下。\n\n结果是 3:1' })
+    ])
+    expect(merged).toHaveLength(1)
+    expect(merged[0]?.content).toBe('我查一下。\n\n结果是 3:1')
+    expect(merged[0]?.parts?.filter(item => item.type === 'text').map(item => item.text)).toEqual([
+      '我查一下。',
+      '结果是 3:1'
+    ])
+  })
+
+  it('does not merge plain assistant replies across a user turn', () => {
+    const merged = mergeAssistantTurns([
+      message({ id: 'a1', role: 'assistant', content: 'one' }),
+      message({ id: 'u1', role: 'user', content: 'again' }),
+      message({ id: 'a2', role: 'assistant', content: 'two' })
+    ])
+    expect(merged.map(item => item.id)).toEqual(['a1', 'u1', 'a2'])
   })
 })

@@ -1,4 +1,17 @@
 import type { ChatApproval, ChatStatus, ChatStopKind, ChatThreadMessage, ChatToolEvent } from '~/types/hermes'
+import {
+  appendStreamPart,
+  appendToolPart,
+  applyCompleteReasoning,
+  applyCompleteText,
+  markLastStreamPartLive,
+  messageParts,
+  patchToolPart,
+  sealOpenParts,
+  sliceAfterLastTool,
+  withAppendedTools,
+  withParts
+} from '~/utils/assistantParts'
 import { branchCountThrough } from '~/utils/chatBranch'
 import {
   applySurvivorRowIdMap,
@@ -13,9 +26,8 @@ import { chatUid, sleep } from '~/utils/chatRun'
 import { isGenericModel } from '~/composables/useModelCatalog'
 import { isBusySessionModelSwitch, sessionModelSetValue } from '~/utils/modelSettings'
 import { isSubagentTool, isToolResultFailed } from '~/utils/toolRun'
-import { mapSessionMessage } from '~/utils/sessionMessages'
+import { mapSessionMessage, mergeAssistantMessages, mergeAssistantTurns } from '~/utils/sessionMessages'
 import {
-  appendReasoning,
   asReasoningText,
   coerceThinkingText,
   finalizeAssistantText,
@@ -63,7 +75,7 @@ function mapHistoryMessages(raw: unknown[]): ChatThreadMessage[] {
 
   function attachTools(target: ChatThreadMessage, extra: ChatToolEvent[]) {
     if (!extra.length) return
-    target.tools = [...(target.tools || []), ...extra]
+    Object.assign(target, withAppendedTools(target, extra))
   }
 
   function takeAssistant(rec: Record<string, unknown>, createdAt: number): ChatThreadMessage {
@@ -91,7 +103,7 @@ function mapHistoryMessages(raw: unknown[]): ChatThreadMessage[] {
     const rowId = asRowId(rec.row_id)
     const rawContent = String(rec.text || rec.content || '')
     const split = splitReasoning(rawContent)
-    return {
+    const next: ChatThreadMessage = {
       id: String(rowId ?? rec.row_id ?? rec.id ?? chatUid('a')),
       role: 'assistant',
       rowId,
@@ -100,6 +112,7 @@ function mapHistoryMessages(raw: unknown[]): ChatThreadMessage[] {
       tools: fromCalls,
       createdAt
     }
+    return withParts(next, messageParts(next))
   }
 
   for (const item of raw) {
@@ -138,9 +151,7 @@ function mapHistoryMessages(raw: unknown[]): ChatThreadMessage[] {
       pendingTools = []
       const last = rows.at(-1)
       if (last?.role === 'assistant' && !last.content.trim()) {
-        last.content = next.content
-        last.reasoning = last.reasoning || next.reasoning
-        attachTools(last, next.tools || [])
+        rows[rows.length - 1] = mergeAssistantMessages(last, next)
         continue
       }
       rows.push(next)
@@ -148,7 +159,11 @@ function mapHistoryMessages(raw: unknown[]): ChatThreadMessage[] {
     }
 
     const mapped = mapSessionMessage({
-      id: rec.row_id ?? rec.id ?? chatUid(role === 'user' ? 'u' : 's'),
+      id: typeof rec.row_id === 'string' || typeof rec.row_id === 'number'
+        ? rec.row_id
+        : typeof rec.id === 'string' || typeof rec.id === 'number'
+          ? rec.id
+          : chatUid(role === 'user' ? 'u' : 's'),
       role,
       content: rec.text ?? rec.content ?? '',
       timestamp: typeof rec.timestamp === 'number' || typeof rec.timestamp === 'string'
@@ -163,16 +178,17 @@ function mapHistoryMessages(raw: unknown[]): ChatThreadMessage[] {
   const last = rows.at(-1)
   if (last?.role === 'assistant') attachTools(last, pendingTools)
   else if (pendingTools.length) {
-    rows.push({
+    const orphan: ChatThreadMessage = {
       id: chatUid('a'),
       role: 'assistant',
       content: '',
       tools: pendingTools,
       createdAt: pendingTools[0]?.startedAt || Date.now()
-    })
+    }
+    rows.push(withParts(orphan, messageParts(orphan)))
   }
 
-  return rows
+  return mergeAssistantTurns(rows)
 }
 
 export function useChatController() {
@@ -201,7 +217,7 @@ export function useChatController() {
 
   const busy = computed(() => status.value === 'submitted' || status.value === 'streaming')
   const stopping = computed(() => userStopped.value && busy.value)
-  const thread = computed(() => messages.value)
+  const thread = computed(() => mergeAssistantTurns(messages.value))
 
   const activeModel = computed(() => asSessionModel(sessionModel.value) || asSessionModel(model.value))
   const activeProvider = computed(() => sessionProvider.value.trim() || provider.value.trim())
@@ -234,7 +250,7 @@ export function useChatController() {
 
   function appendAssistant() {
     const last = messages.value.at(-1)
-    if (last?.role === 'assistant' && !last.content.trim() && (last.streaming || last.reasoning || last.tools?.length)) {
+    if (last?.role === 'assistant') {
       assistantId.value = last.id
       if (!last.streaming) patchAssistant(last.id, { streaming: true })
       return last
@@ -244,6 +260,7 @@ export function useChatController() {
       role: 'assistant',
       content: '',
       tools: [],
+      parts: [],
       streaming: true,
       createdAt: Date.now()
     }
@@ -260,36 +277,42 @@ export function useChatController() {
     if (providerWait.value) providerWait.value = ''
   }
 
-  function sealReasoning(current: ChatThreadMessage): Partial<ChatThreadMessage> {
-    if (!current.reasoningLive) return {}
-    return {
-      reasoningLive: false,
-      reasoningEndedAt: current.reasoningEndedAt || Date.now()
-    }
+  function patchParts(
+    current: ChatThreadMessage,
+    parts: ChatThreadMessage['parts'],
+    extra: Partial<ChatThreadMessage> = {}
+  ) {
+    patchAssistant(current.id, {
+      ...withParts(current, parts || []),
+      ...extra
+    })
   }
 
   function applyReasoning(text: string, replace: boolean) {
     const delta = coerceThinkingText(text)
     if (!delta) return
     const current = messages.value.find(item => item.id === assistantId.value) || appendAssistant()
+    const parts = [...messageParts(current)]
+    const round = sliceAfterLastTool(parts)
+    const roundText = round.some(part => part.type === 'text' && part.text.trim())
+    const roundReasoning = round.findLast(part => part.type === 'reasoning')
     if (replace) {
-      if ((current.content || '').trim() && !(current.reasoning || '').trim()) return
-      const next = mergeReasoningAvailable(current.reasoning || '', delta)
-      if (next === (current.reasoning || '')) return
-      patchAssistant(current.id, {
-        reasoning: next,
-        reasoningLive: true,
-        reasoningStartedAt: current.reasoningStartedAt || Date.now(),
-        streaming: true
-      })
+      if (roundText && !(roundReasoning?.text || '').trim()) return
+      const base = roundReasoning?.text || ''
+      const next = mergeReasoningAvailable(base, delta)
+      if (next === base) return
+      if (roundReasoning) {
+        patchParts(current, parts.map(part => (
+          part === roundReasoning
+            ? { ...part, text: next, live: true, startedAt: part.startedAt || Date.now() }
+            : part
+        )), { streaming: true })
+        return
+      }
+      patchParts(current, appendStreamPart(parts, 'reasoning', next), { streaming: true })
       return
     }
-    patchAssistant(current.id, {
-      reasoning: appendReasoning(current.reasoning || '', delta),
-      reasoningLive: true,
-      reasoningStartedAt: current.reasoningStartedAt || Date.now(),
-      streaming: true
-    })
+    patchParts(current, appendStreamPart(parts, 'reasoning', delta), { streaming: true })
   }
 
   function bindEvents() {
@@ -302,7 +325,8 @@ export function useChatController() {
       userStopped.value = false
       turnStopKind.value = ''
       clearProviderWait()
-      appendAssistant()
+      const current = appendAssistant()
+      patchParts(current, sealOpenParts(messageParts(current)), { streaming: true })
     })
 
     gateway.on<{ text?: string }>('message.delta', (event) => {
@@ -311,17 +335,8 @@ export function useChatController() {
       if (typeof text !== 'string' || !text) return
       status.value = 'streaming'
       clearProviderWait()
-      const current = messages.value.find(item => item.id === assistantId.value)
-      if (current) {
-        patchAssistant(current.id, {
-          ...sealReasoning(current),
-          content: current.content + text,
-          streaming: true
-        })
-      } else {
-        const created = appendAssistant()
-        patchAssistant(created.id, { content: text, streaming: true })
-      }
+      const current = messages.value.find(item => item.id === assistantId.value) || appendAssistant()
+      patchParts(current, appendStreamPart(messageParts(current), 'text', text), { streaming: true })
     })
 
     gateway.on<{ text?: string, error?: string, status?: string, reasoning?: string }>('message.complete', (event) => {
@@ -330,22 +345,24 @@ export function useChatController() {
       clearProviderWait()
       const current = messages.value.find(item => item.id === assistantId.value)
       if (current) {
+        const lastText = [...messageParts(current)].reverse().find(part => part.type === 'text')
+        const lastReasoning = [...messageParts(current)].reverse().find(part => part.type === 'reasoning')
         const finalized = finalizeAssistantText({
-          content: current.content,
+          content: lastText?.text || '',
           payloadText: event.payload?.text,
           payloadReasoning: event.payload?.reasoning,
-          streamedReasoning: current.reasoning
+          streamedReasoning: lastReasoning?.text
         })
-        patchAssistant(current.id, {
-          ...sealReasoning(current),
-          content: finalized.content,
-          reasoning: finalized.reasoning,
+        const completed = applyCompleteReasoning(
+          applyCompleteText(messageParts(current), finalized.content),
+          finalized.reasoning
+        ).map(part => (
+          part.type === 'tool' && part.tool.status === 'running'
+            ? { type: 'tool' as const, tool: { ...part.tool, status: 'completed' as const, endedAt: Date.now() } }
+            : part
+        ))
+        patchParts(current, completed, {
           streaming: false,
-          tools: (current.tools || []).map(tool => (
-            tool.status === 'running'
-              ? { ...tool, status: 'completed' as const, endedAt: Date.now() }
-              : tool
-          )),
           stopKind: userStopped.value ? 'user_stop' : undefined
         })
       }
@@ -367,20 +384,15 @@ export function useChatController() {
       clearProviderWait()
       const current = messages.value.find(item => item.id === assistantId.value) || appendAssistant()
       const name = event.payload?.name || 'tool'
-      const tools = [...(current.tools || []), {
+      patchParts(current, appendToolPart(messageParts(current), {
         id: String(event.payload?.tool_id || chatUid('tool')),
         name,
         kind: isSubagentTool({ name, kind: 'tool' }) ? 'subagent' as const : 'tool' as const,
-        status: 'running' as const,
+        status: 'running',
         preview: event.payload?.summary || event.payload?.context || event.payload?.preview || '',
         args: event.payload?.args,
         startedAt: Date.now()
-      }]
-      patchAssistant(current.id, {
-        ...sealReasoning(current),
-        tools,
-        streaming: true
-      })
+      }), { streaming: true })
     })
 
     gateway.on<{
@@ -395,33 +407,38 @@ export function useChatController() {
     }>('tool.complete', (event) => {
       if (!sameSession(event.session_id)) return
       const current = messages.value.find(item => item.id === assistantId.value)
-      if (!current?.tools?.length) return
+      if (!current) return
       const toolId = event.payload?.tool_id
       const toolName = event.payload?.name
       let matched = false
-      const tools = current.tools.map((tool) => {
-        if (matched || tool.status !== 'running') return tool
-        if (toolId && tool.id !== String(toolId) && tool.name !== toolName) return tool
-        if (!toolId && toolName && tool.name !== toolName) return tool
-        matched = true
-        const durationMs = typeof event.payload?.duration_s === 'number'
-          ? Math.round(event.payload.duration_s * 1000)
-          : undefined
-        const endedAt = Date.now()
-        return {
-          ...tool,
-          status: isToolResultFailed(event.payload?.result) ? 'failed' as const : 'completed' as const,
-          preview: event.payload?.summary || tool.preview,
-          args: event.payload?.args ?? tool.args,
-          result: event.payload?.result,
-          resultText: event.payload?.result_text || tool.resultText,
-          inlineDiff: event.payload?.inline_diff || tool.inlineDiff,
-          endedAt: durationMs != null && tool.startedAt
-            ? tool.startedAt + durationMs
-            : endedAt
+      patchParts(current, patchToolPart(
+        messageParts(current),
+        (tool) => {
+          if (matched || tool.status !== 'running') return false
+          if (toolId && tool.id !== String(toolId) && tool.name !== toolName) return false
+          if (!toolId && toolName && tool.name !== toolName) return false
+          matched = true
+          return true
+        },
+        (tool) => {
+          const durationMs = typeof event.payload?.duration_s === 'number'
+            ? Math.round(event.payload.duration_s * 1000)
+            : undefined
+          const endedAt = Date.now()
+          return {
+            ...tool,
+            status: isToolResultFailed(event.payload?.result) ? 'failed' as const : 'completed' as const,
+            preview: event.payload?.summary || tool.preview,
+            args: event.payload?.args ?? tool.args,
+            result: event.payload?.result,
+            resultText: event.payload?.result_text || tool.resultText,
+            inlineDiff: event.payload?.inline_diff || tool.inlineDiff,
+            endedAt: durationMs != null && tool.startedAt
+              ? tool.startedAt + durationMs
+              : endedAt
+          }
         }
-      })
-      patchAssistant(current.id, { tools })
+      ))
     })
 
     gateway.on<{ text?: string }>('reasoning.delta', (event) => {
@@ -448,16 +465,23 @@ export function useChatController() {
 
     gateway.on<{ text?: string, already_streamed?: boolean }>('message.interim', (event) => {
       if (!sameSession(event.session_id)) return
-      if (event.payload?.already_streamed) return
       const text = event.payload?.text
       if (typeof text !== 'string' || !text) return
       clearProviderWait()
       const current = messages.value.find(item => item.id === assistantId.value) || appendAssistant()
-      patchAssistant(current.id, {
-        ...sealReasoning(current),
-        content: text,
-        streaming: true
-      })
+      const parts = messageParts(current)
+      if (event.payload?.already_streamed) {
+        patchParts(current, sealOpenParts(parts), { streaming: true })
+        return
+      }
+      const sealed = sealOpenParts(parts)
+      const last = sealed.at(-1)
+      const next = last?.type === 'text'
+        ? sealed.map((part, index) => index === sealed.length - 1 && part.type === 'text'
+          ? { ...part, text, live: false }
+          : part)
+        : [...sealed, { type: 'text' as const, text, live: false }]
+      patchParts(current, next, { streaming: true })
     })
 
     gateway.on<ChatApproval>('approval.request', (event) => {
@@ -523,7 +547,7 @@ export function useChatController() {
         const last = messages.value.at(-1)
         if (last?.role === 'assistant') {
           assistantId.value = last.id
-          patchAssistant(last.id, { streaming: true })
+          patchParts(last, markLastStreamPartLive(messageParts(last)), { streaming: true })
         }
       }
     } catch (error) {

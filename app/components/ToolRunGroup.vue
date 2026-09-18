@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { ChatToolEvent } from '~/types/hermes'
 import { prettyJson, toolArgsLine } from '~/utils/format'
-import { summarizeToolRun, toolTrailLine } from '~/utils/toolRun'
+import { toolRowIcon } from '~/utils/toolIcon'
+import { summarizeToolRun, toolTrailLine, visibleTools } from '~/utils/toolRun'
 
 const props = defineProps<{
   tools: ChatToolEvent[]
   live?: boolean
+  embedded?: boolean
 }>()
 
 const { collapseDetails } = useRunDisplay()
@@ -14,8 +16,12 @@ const userOpen = ref<boolean | null>(null)
 const expandedId = ref<string | null>(null)
 
 const live = computed(() => Boolean(props.live))
-const summary = computed(() => summarizeToolRun(props.tools, live.value) || '调用了工具')
-const open = computed(() => userOpen.value ?? (live.value ? false : !collapseDetails.value))
+const summary = computed(() => {
+  const text = summarizeToolRun(props.tools, live.value) || '调用了工具'
+  const count = visibleTools(props.tools).length
+  return count > 1 ? `${text}（${count}）` : text
+})
+const open = computed(() => props.embedded ? true : userOpen.value ?? (live.value ? false : !collapseDetails.value))
 const lines = computed(() => props.tools.map((tool, index) => ({
   id: `${tool.id}-${index}`,
   tool,
@@ -42,9 +48,11 @@ watch(() => props.tools.length, (count) => {
 <template>
   <div
     class="tool-run"
+    :class="{ 'is-embedded': embedded }"
     data-conversation-scaffold
   >
     <ChatScaffoldRow
+      v-if="!embedded"
       :open="open"
       toggleable
       @toggle="toggle"
@@ -53,7 +61,7 @@ watch(() => props.tools.length, (count) => {
     </ChatScaffoldRow>
 
     <div
-      v-if="live && !open"
+      v-if="live && !open && !embedded"
       class="tool-ticker"
     >
       <div
@@ -65,7 +73,12 @@ watch(() => props.tools.length, (count) => {
           :key="item.id"
           class="tool-ticker__row"
         >
-          {{ item.line }}
+          <UiIcon
+            :name="toolRowIcon(item.tool)"
+            :size="14"
+            :spin="item.tool.status === 'running'"
+          />
+          <span>{{ item.line }}</span>
         </div>
       </div>
     </div>
@@ -91,7 +104,12 @@ watch(() => props.tools.length, (count) => {
           :aria-expanded="expandedId === item.id"
           @click="toggleLine(item.id)"
         >
-          {{ item.line }}
+          <UiIcon
+            :name="toolRowIcon(item.tool)"
+            :size="14"
+            :spin="item.tool.status === 'running'"
+          />
+          <span class="tool-trail__label">{{ item.line }}</span>
         </button>
         <pre
           v-if="expandedId === item.id && item.detail"
@@ -106,6 +124,12 @@ watch(() => props.tools.length, (count) => {
 .tool-run {
   width: 100%;
   min-width: 0;
+
+  &.is-embedded .tool-trail {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
 }
 
 .tool-ticker {
@@ -123,11 +147,17 @@ watch(() => props.tools.length, (count) => {
   display: flex;
   height: 1.35rem;
   align-items: center;
+  gap: 0.35rem;
   overflow: hidden;
   color: var(--color-text-muted);
   font-size: 0.8125rem;
-  text-overflow: ellipsis;
   white-space: nowrap;
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .tool-trail {
@@ -143,9 +173,11 @@ watch(() => props.tools.length, (count) => {
 }
 
 .tool-trail__hit {
-  display: block;
+  display: flex;
   width: 100%;
   min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
   overflow: hidden;
   border: 0;
   background: transparent;
@@ -153,16 +185,30 @@ watch(() => props.tools.length, (count) => {
   color: inherit;
   font: inherit;
   text-align: start;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 
   &:not(:disabled) {
     cursor: pointer;
   }
+
+  :deep(.ui-icon) {
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+  }
+}
+
+.tool-trail__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tool-trail__item.is-failed .tool-trail__hit {
   color: var(--color-error);
+
+  :deep(.ui-icon) {
+    color: var(--color-error);
+  }
 }
 
 .tool-trail__item.is-running .tool-trail__hit {
