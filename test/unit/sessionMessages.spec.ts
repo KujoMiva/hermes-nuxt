@@ -222,8 +222,8 @@ describe('chatBubbleMemo', () => {
 
 describe('fetchAllSessionMessages', () => {
   it('uses session.resume messages when present', async () => {
-    const request = vi.fn(async (method: string) => {
-      if (method === 'session.resume') {
+    const request = vi.fn(async (_method: string, _params?: Record<string, unknown>) => {
+      if (_method === 'session.resume') {
         return {
           session_id: 's1',
           messages: [{ role: 'user', text: 'hi', row_id: 1 }]
@@ -232,7 +232,7 @@ describe('fetchAllSessionMessages', () => {
       throw new Error('history should not run')
     })
 
-    const rows = await fetchAllSessionMessages(request, 's1')
+    const rows = await fetchAllSessionMessages(request as never, 's1')
 
     expect(request).toHaveBeenCalledTimes(1)
     expect(request.mock.calls[0]?.[0]).toBe('session.resume')
@@ -241,12 +241,12 @@ describe('fetchAllSessionMessages', () => {
   })
 
   it('falls back to session.history when resume has no messages', async () => {
-    const request = vi.fn(async (method: string) => {
-      if (method === 'session.resume') return { session_id: 's1', messages: [] }
+    const request = vi.fn(async (_method: string, _params?: Record<string, unknown>) => {
+      if (_method === 'session.resume') return { session_id: 's1', messages: [] }
       return { messages: [{ role: 'assistant', content: 'yo', id: 'a1' }] }
     })
 
-    const rows = await fetchAllSessionMessages(request, 'missing')
+    const rows = await fetchAllSessionMessages(request as never, 'missing')
 
     expect(request.mock.calls.map(call => call[0])).toEqual(['session.resume', 'session.history'])
     expect(request.mock.calls[1]?.[1]).toEqual({ session_id: 's1' })
