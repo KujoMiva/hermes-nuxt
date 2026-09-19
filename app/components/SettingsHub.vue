@@ -296,6 +296,12 @@ const shortcuts = computed(() => [
         to="/settings?tab=models"
       />
       <SettingsRow
+        icon="i-lucide-archive"
+        title="已归档对话"
+        description="从侧边栏隐藏，消息仍会保留"
+        to="/settings?tab=sessions"
+      />
+      <SettingsRow
         icon="i-lucide-log-out"
         title="退出登录"
         description="断开当前远程网关，回到登录页"

@@ -1,5 +1,5 @@
 import type { HermesSession } from '~/types/hermes'
-import { visibleArchivedSessions, visibleChatSessions } from '~/utils/sessionGroups'
+import { mergeArchivedSessions, visibleArchivedSessions, visibleChatSessions } from '~/utils/sessionGroups'
 import { mergeSessionSearch, searchHitToSession } from '~/utils/sessionSearch'
 
 const PIN_STORE = 'hermes-pinned-ids'
@@ -73,10 +73,14 @@ function uniqueSessions(rows: HermesSession[]) {
   return out
 }
 
+function mapSessions(rows: unknown[]) {
+  return rows.map(asSession).filter((row): row is HermesSession => Boolean(row))
+}
+
 export function useSessions() {
   const gateway = useGateway()
   const dashboard = useDashboardApi()
-  const { isConfigured } = useConnection()
+  const { isConfigured, profile } = useConnection()
   const toast = useToast()
 
   const items = useState<HermesSession[]>('hermes-sessions', () => [])
@@ -134,7 +138,7 @@ export function useSessions() {
     loading.value = true
     try {
       const payload = await gateway.request<{ sessions?: unknown[] }>('session.list', { limit: 200 })
-      items.value = applyPins((payload.sessions || []).map(asSession).filter((row): row is HermesSession => Boolean(row)), pins.value)
+      items.value = applyPins(mapSessions(payload.sessions || []), pins.value)
       hasMore.value = (payload.sessions || []).length >= 200
     } catch (error) {
       toast.add({
@@ -158,19 +162,60 @@ export function useSessions() {
     }
     loadingArchived.value = true
     try {
-      const payload = await gateway.request<{ sessions?: unknown[] }>('session.list', {
-        limit: 200,
-        include_hidden: true
-      })
-      const visibleIds = new Set(items.value.map(item => item.id))
+      let flagged: HermesSession[] = []
+      let hiddenListed: HermesSession[] = []
+      let restError: unknown
+      let hiddenError: unknown
+
+      try {
+        const payload = await dashboard.request<{ sessions?: unknown[] }>('sessions', {
+          query: { archived: 'only', order: 'recent', limit: 100 }
+        })
+        flagged = mapSessions(payload.sessions || [])
+        archiveFromApi.value = true
+        archiveHasMore.value = (payload.sessions || []).length >= 100
+      } catch (error) {
+        restError = error
+        archiveFromApi.value = false
+        archiveHasMore.value = false
+      }
+
+      let visibleIds = items.value.map(item => item.id)
+      try {
+        const [visiblePayload, hiddenPayload] = await Promise.all([
+          gateway.request<{ sessions?: unknown[] }>('session.list', { limit: 200 }),
+          gateway.request<{ sessions?: unknown[] }>('session.list', {
+            limit: 200,
+            include_hidden: true
+          })
+        ])
+        visibleIds = mapSessions(visiblePayload.sessions || []).map(item => item.id)
+        hiddenListed = mapSessions(hiddenPayload.sessions || [])
+      } catch (error) {
+        hiddenError = error
+      }
+
+      if (restError && hiddenError) {
+        throw restError
+      }
+
       archivedItems.value = applyPins(
-        (payload.sessions || [])
-          .map(asSession)
-          .filter((row): row is HermesSession => Boolean(row && (row.hidden || row.archived || (!visibleIds.has(row.id) && row.hidden))))
-          .filter(row => !visibleIds.has(row.id) || Boolean(row.hidden || row.archived)),
+        mergeArchivedSessions(flagged, hiddenListed, visibleIds),
         pins.value
       )
-      archiveHasMore.value = false
+
+      const flaggedIds = new Set(flagged.map(item => item.id))
+      const extras = archivedItems.value.filter(item => !flaggedIds.has(item.id))
+      for (const extra of extras.slice(0, 20)) {
+        void dashboard.request(`sessions/${encodeURIComponent(extra.id)}`, {
+          method: 'PATCH',
+          body: {
+            archived: true,
+            hidden: false,
+            ...(profile.value.trim() ? { profile: profile.value.trim() } : {})
+          }
+        }).catch(() => {})
+      }
     } catch (error) {
       toast.add({
         title: '无法加载归档',
@@ -213,10 +258,42 @@ export function useSessions() {
     serverHits.value = serverHits.value.filter(item => item.id !== id)
   }
 
-  async function archive(id: string, hidden = true) {
-    await gateway.request('session.set_hidden', { session_id: id, hidden })
+  function applyArchiveLocal(id: string, archived: boolean) {
+    const row = find(id)
+    if (archived) {
+      items.value = items.value.filter(item => item.id !== id)
+      if (row) {
+        archivedItems.value = applyPins(
+          [{ ...row, archived: true, hidden: false }, ...archivedItems.value.filter(item => item.id !== id)],
+          pins.value
+        )
+      }
+      return
+    }
+    archivedItems.value = archivedItems.value.filter(item => item.id !== id)
+    if (row) {
+      items.value = applyPins(
+        [{ ...row, archived: false, hidden: false }, ...items.value.filter(item => item.id !== id)],
+        pins.value
+      )
+    }
+  }
+
+  async function archive(id: string, archived = true) {
+    const body: Record<string, boolean | string> = { archived, hidden: false }
+    const profileId = profile.value.trim()
+    if (profileId) body.profile = profileId
+    try {
+      await dashboard.request(`sessions/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body
+      })
+    } catch {
+      await gateway.request('session.set_hidden', { session_id: id, hidden: archived })
+    }
+    applyArchiveLocal(id, archived)
     await refresh()
-    if (hidden || query.value) await loadArchived()
+    await loadArchived()
   }
 
   async function pin(id: string, next: boolean) {

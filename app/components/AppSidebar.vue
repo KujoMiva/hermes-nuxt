@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HermesSession } from '~/types/hermes'
-import { groupChatSessions, visibleArchivedSessions } from '~/utils/sessionGroups'
+import { groupChatSessions } from '~/utils/sessionGroups'
 
 const open = defineModel<boolean>('open', { default: false })
 const { collapsed } = useSidebarDisplay()
@@ -58,14 +58,6 @@ const canLoadMore = computed(() => {
   return sessions.hasMore.value && !isSearching.value
 })
 
-const canLoadMoreArchived = computed(() => {
-  return sessions.archiveHasMore.value && !isSearching.value
-})
-
-const archivedSessions = computed(() => {
-  return visibleArchivedSessions(sessions.archivedFiltered.value)
-})
-
 const searchHint = computed(() => {
   if (sessions.searching.value) return '全库搜索中'
   const count = sessions.filtered.value.length
@@ -77,9 +69,7 @@ function isExpanded(id: string) {
 }
 
 function toggleWorkspace(id: string) {
-  const next = !isExpanded(id)
-  expanded.value[id] = next
-  if (id === 'archive' && next) void sessions.loadArchived()
+  expanded.value[id] = !isExpanded(id)
 }
 
 const host = computed(() => endpointHref.value)
@@ -136,17 +126,10 @@ const homeEmptyText = computed(() => {
   return '暂无会话'
 })
 
-const archiveEmptyText = computed(() => {
-  if (sessions.loadingArchived.value) return '加载中…'
-  if (sessions.query.value.trim()) return '没有匹配的归档'
-  return '没有归档的会话'
-})
-
 watch(() => route.params.id, (id) => {
   if (!id) return
   const group = workspaces.value.find(item => item.sessions.some(session => session.id === id))
   if (group) expanded.value[group.id] = true
-  if (archivedSessions.value.some(item => item.id === id)) expanded.value.archive = true
 })
 </script>
 
@@ -239,24 +222,6 @@ watch(() => route.params.id, (id) => {
           @menu="openMenu"
           @load-more="sessions.loadMore()"
         />
-
-        <SidebarSessionGroup
-          label="归档箱"
-          :hint="archivedSessions.length ? `${archivedSessions.length} 个会话` : '已归档'"
-          icon="i-lucide-archive"
-          :expanded="isExpanded('archive')"
-          :sessions="archivedSessions"
-          :active-id="String(route.params.id || '')"
-          docked
-          :show-pin="false"
-          :empty-text="archiveEmptyText"
-          :show-load-more="canLoadMoreArchived"
-          :loading-more="sessions.loadingMoreArchived.value"
-          @toggle="toggleWorkspace('archive')"
-          @open="openSession"
-          @menu="openMenu"
-          @load-more="sessions.loadMoreArchived()"
-        />
       </template>
     </div>
 
@@ -312,7 +277,6 @@ watch(() => route.params.id, (id) => {
       v-model:session="menuSession"
       v-model:open="menuOpen"
       @close-sidebar="open = false"
-      @archived="expanded.archive = true"
     />
   </aside>
 </template>

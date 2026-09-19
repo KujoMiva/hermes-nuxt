@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { HermesSession } from '~/types/hermes'
 import {
   groupChatSessions,
+  mergeArchivedSessions,
   sessionMeta,
   visibleArchivedSessions,
   visibleChatSessions,
@@ -49,6 +50,23 @@ describe('visibleArchivedSessions', () => {
       session({ id: 'b', archived: true, source: 'tool' })
     ]
     expect(visibleArchivedSessions(rows).map(item => item.id)).toEqual(['a'])
+  })
+})
+
+describe('mergeArchivedSessions', () => {
+  it('keeps REST archived rows and hidden-only rows that left the sidebar', () => {
+    const flagged = [
+      session({ id: 'rest', archived: true, source: 'cli' }),
+      session({ id: 'tool-rest', archived: true, source: 'tool' })
+    ]
+    const listed = [
+      session({ id: 'rest', source: 'cli' }),
+      session({ id: 'hidden', hidden: true, source: 'webui' }),
+      session({ id: 'visible', source: 'cli' }),
+      session({ id: 'cron-hidden', hidden: true, source: 'cron' })
+    ]
+    expect(mergeArchivedSessions(flagged, listed, ['visible']).map(item => item.id))
+      .toEqual(['rest', 'hidden'])
   })
 })
 

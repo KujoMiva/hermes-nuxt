@@ -5,10 +5,11 @@ import SettingsSkills from '~/components/SettingsSkills.vue'
 import SettingsTools from '~/components/SettingsTools.vue'
 import SettingsModels from '~/components/SettingsModels.vue'
 import SettingsStatus from '~/components/SettingsStatus.vue'
+import SettingsSessions from '~/components/SettingsSessions.vue'
 
 definePageMeta({ layout: 'default' })
 
-const TAB_IDS = ['profiles', 'skills', 'tools', 'models', 'status'] as const
+const TAB_IDS = ['profiles', 'skills', 'tools', 'models', 'sessions', 'status'] as const
 type SettingsTab = typeof TAB_IDS[number]
 
 const panels: Record<SettingsTab, Component> = {
@@ -16,6 +17,7 @@ const panels: Record<SettingsTab, Component> = {
   skills: SettingsSkills,
   tools: SettingsTools,
   models: SettingsModels,
+  sessions: SettingsSessions,
   status: SettingsStatus
 }
 

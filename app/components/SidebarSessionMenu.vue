@@ -9,7 +9,6 @@ const open = defineModel<boolean>('open', { default: false })
 
 const emit = defineEmits<{
   closeSidebar: []
-  archived: []
 }>()
 
 const route = useRoute()
@@ -125,8 +124,7 @@ async function archiveSelected() {
   acting.value = true
   try {
     await sessions.archive(item.id)
-    emit('archived')
-    toast.add({ title: '已归档', color: 'success' })
+    toast.add({ title: '已归档', description: '可在控制台的「已归档对话」里查看。', color: 'success' })
     await leaveIfCurrent(item.id)
   } catch (error) {
     toast.add({

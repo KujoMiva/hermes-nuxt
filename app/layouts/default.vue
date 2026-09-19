@@ -19,6 +19,7 @@ const tabTitles: Record<string, string> = {
   skills: '技能',
   tools: '工具集',
   models: '模型',
+  sessions: '已归档对话',
   status: '服务器状态'
 }
 

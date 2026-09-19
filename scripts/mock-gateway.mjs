@@ -206,6 +206,7 @@ store.sessions.push({
   message_count: 2,
   source: 'webui',
   hidden: false,
+  archived: false,
   messages: [
     { role: 'user', text: '你好', timestamp: now() - 120, row_id: 1 },
     { role: 'assistant', text: '你好，这是远程网关控制台。', timestamp: now() - 118, row_id: 2 }
@@ -221,6 +222,7 @@ function sessionSummary(row) {
     message_count: row.message_count || 0,
     source: row.source || 'webui',
     hidden: Boolean(row.hidden),
+    archived: Boolean(row.archived),
     parent_session_id: row.parent_session_id || null
   }
 }
@@ -500,6 +502,7 @@ function handleRpc(frame, send) {
       message_count: 0,
       source: params.source || 'webui',
       hidden: false,
+      archived: false,
       messages: [],
       draft: true
     }
@@ -515,7 +518,7 @@ function handleRpc(frame, send) {
   if (method === 'session.list') {
     const includeHidden = Boolean(params.include_hidden)
     const rows = store.sessions
-      .filter(row => includeHidden || !row.hidden)
+      .filter(row => !row.archived && (includeHidden || !row.hidden))
       .map(sessionSummary)
     rpcOk(send, frame, { sessions: rows })
     return
@@ -612,6 +615,7 @@ function handleRpc(frame, send) {
       message_count: history.length,
       source: 'webui',
       hidden: false,
+      archived: false,
       parent_session_id: live.row.id,
       messages: history.map(message => ({ ...message }))
     }
@@ -838,7 +842,8 @@ const server = http.createServer(async (req, res) => {
     || String(req.headers.authorization || '').startsWith('Bearer ')
 
   if (url.pathname.startsWith('/api/model') || url.pathname.startsWith('/api/config')
-    || url.pathname.startsWith('/api/env') || url.pathname.startsWith('/api/providers/')) {
+    || url.pathname.startsWith('/api/env') || url.pathname.startsWith('/api/providers/')
+    || url.pathname.startsWith('/api/sessions')) {
     if (!authorized) {
       sendJson(res, 401, { detail: 'Unauthorized' })
       return
@@ -1009,6 +1014,43 @@ const server = http.createServer(async (req, res) => {
     const id = decodeURIComponent(deleteMatch[1])
     store.model.endpoints = store.model.endpoints.filter(item => item.id !== id)
     sendJson(res, 200, { ok: true, endpoints: store.model.endpoints })
+    return
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/sessions') {
+    const archived = url.searchParams.get('archived') || 'exclude'
+    let rows = store.sessions
+    if (archived === 'only') rows = rows.filter(row => row.archived)
+    else if (archived !== 'include') rows = rows.filter(row => !row.archived && !row.hidden)
+    else rows = rows.filter(row => !row.hidden)
+    const limit = Math.min(100, Math.max(0, Number(url.searchParams.get('limit') || 20) || 20))
+    const offset = Math.max(0, Number(url.searchParams.get('offset') || 0) || 0)
+    sendJson(res, 200, {
+      sessions: rows.slice(offset, offset + limit).map(sessionSummary),
+      total: rows.length,
+      limit,
+      offset
+    })
+    return
+  }
+
+  const sessionPatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/)
+  if (req.method === 'PATCH' && sessionPatch) {
+    const stored = findStored(decodeURIComponent(sessionPatch[1]))
+    if (!stored) {
+      sendJson(res, 404, { detail: 'session not found' })
+      return
+    }
+    const body = JSON.parse((await readBody(req)) || '{}')
+    if (body.archived != null) stored.archived = Boolean(body.archived)
+    if (body.hidden != null) stored.hidden = Boolean(body.hidden)
+    if (body.title != null) stored.title = String(body.title)
+    sendJson(res, 200, {
+      ok: true,
+      archived: Boolean(stored.archived),
+      hidden: Boolean(stored.hidden),
+      title: stored.title || ''
+    })
     return
   }
 

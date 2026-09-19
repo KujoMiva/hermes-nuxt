@@ -43,6 +43,24 @@ export function visibleArchivedSessions(list: HermesSession[]) {
   return list.filter(item => !HIDDEN_SOURCES.has(item.source || ''))
 }
 
+/** REST `archived=only` rows plus sessions previously tucked away with `hidden`. */
+export function mergeArchivedSessions(
+  flagged: HermesSession[],
+  listedWithHidden: HermesSession[],
+  visibleIds: Iterable<string>
+) {
+  const visible = new Set(visibleIds)
+  const out = new Map<string, HermesSession>()
+  for (const item of flagged) {
+    out.set(item.id, { ...item, archived: true })
+  }
+  for (const item of listedWithHidden) {
+    if (out.has(item.id) || visible.has(item.id)) continue
+    out.set(item.id, { ...item, archived: true, hidden: item.hidden ?? true })
+  }
+  return visibleArchivedSessions([...out.values()])
+}
+
 export function groupChatSessions(
   list: HermesSession[],
   home: { label: string, hint: string }
