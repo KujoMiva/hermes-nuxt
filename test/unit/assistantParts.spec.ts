@@ -132,6 +132,28 @@ describe('assistantBlocks', () => {
     expect(blocks[2]?.type === 'shelf' ? blocks[2].tools.map(item => item.id) : []).toEqual(['t1', 't2'])
     expect(blocks[3]?.type === 'text' ? blocks[3].part.text : '').toBe('最近一场：JDG 3:1 WE')
   })
+
+  it('puts a stored content+tools reply under Tool calls like TUI Response', () => {
+    const blocks = assistantBlocks(assistant({
+      content: '能看，而且有两种非常清晰的查看方式。',
+      reasoning: '先跑命令再回答',
+      tools: [tool('t1', 'terminal'), tool('t2', 'terminal')]
+    }))
+    expect(blocks.map(block => block.type)).toEqual(['reasoning', 'shelf', 'text'])
+    expect(blocks[2]?.type === 'text' ? blocks[2].part.text : '').toBe('能看，而且有两种非常清晰的查看方式。')
+  })
+
+  it('keeps live pre-tool narration above tools until the reply arrives', () => {
+    const blocks = assistantBlocks(assistant({
+      streaming: true,
+      parts: [
+        { type: 'text', text: '我查一下。' },
+        { type: 'tool', tool: tool('t1', 'terminal') }
+      ]
+    }))
+    expect(blocks.map(block => block.type)).toEqual(['text', 'shelf'])
+    expect(blocks[0]?.type === 'text' ? blocks[0].part.text : '').toBe('我查一下。')
+  })
 })
 
 describe('applyCompleteText', () => {
@@ -144,6 +166,18 @@ describe('applyCompleteText', () => {
     expect(parts.filter(part => part.type === 'text').map(part => part.text)).toEqual([
       '我查一下最新一场比赛的结果。',
       '最近一场：JDG 3:1 WE'
+    ])
+  })
+
+  it('appends the complete payload after tools instead of growing the preamble', () => {
+    const parts = applyCompleteText([
+      { type: 'text', text: '我查一下。', live: false },
+      { type: 'tool', tool: tool('t1', 'terminal') }
+    ], '我查一下。\n\n能看，而且有两种非常清晰的查看方式。')
+    expect(parts.map(part => part.type)).toEqual(['text', 'tool', 'text'])
+    expect(parts.filter(part => part.type === 'text').map(part => part.text)).toEqual([
+      '我查一下。',
+      '能看，而且有两种非常清晰的查看方式。'
     ])
   })
 })

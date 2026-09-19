@@ -219,6 +219,20 @@ export function mergePartLists(left: ChatMessagePart[], right: ChatMessagePart[]
   return dedupeRepeatedTextInParts(out)
 }
 
+function remainderAfterTextParts(
+  parts: ChatMessagePart[],
+  content: string,
+  skipIndex = -1
+) {
+  let remainder = content
+  for (const [index, part] of parts.entries()) {
+    if (part.type !== 'text' || index === skipIndex) continue
+    remainder = remainderAfterPrefix(part.text, remainder)
+    if (!remainder) return ''
+  }
+  return remainder
+}
+
 export function applyCompleteText(parts: ChatMessagePart[], finalizedContent: string): ChatMessagePart[] {
   const sealed = sealOpenParts(parts)
   const content = finalizedContent.trim()
@@ -227,19 +241,21 @@ export function applyCompleteText(parts: ChatMessagePart[], finalizedContent: st
   const streamed = assistantTextFromParts(sealed)
   if (streamed && normalizeWs(streamed) === normalizeWs(content)) return sealed
 
+  const lastTool = sealed.findLastIndex(part => part.type === 'tool')
   const lastIndex = sealed.findLastIndex(part => part.type === 'text')
   if (lastIndex < 0) return [...sealed, { type: 'text', text: content }]
 
-  let remainder = content
-  for (const [index, part] of sealed.entries()) {
-    if (part.type !== 'text' || index === lastIndex) continue
-    remainder = remainderAfterPrefix(part.text, remainder)
-    if (!remainder) break
+  // TUI `finalTail`: the complete payload is the reply under Tool calls, not
+  // a longer version of the pre-tool narration.
+  if (lastTool >= 0 && lastIndex < lastTool) {
+    const remainder = remainderAfterTextParts(sealed, content)
+    if (!remainder) return sealed
+    return [...sealed, { type: 'text', text: remainder, live: false }]
   }
 
   const last = sealed[lastIndex]
   if (last?.type !== 'text') return sealed
-  let lastText = joinAssistantText(last.text, remainder || content)
+  let lastText = joinAssistantText(last.text, remainderAfterTextParts(sealed, content, lastIndex) || content)
   for (const [index, part] of sealed.entries()) {
     if (part.type !== 'text' || index === lastIndex) continue
     lastText = remainderAfterPrefix(part.text, lastText) || lastText
@@ -313,7 +329,7 @@ function shelfSegments(parts: ChatMessagePart[]): AssistantShelfSegment[] {
   return segments
 }
 
-/** First thought, then narration, then one fold with interleaved thinking + tools, then the reply. */
+/** First thought, optional interim reply, one tool fold, then the main reply. */
 export function assistantBlocks(message: ChatThreadMessage): AssistantTimelineBlock[] {
   const parts = messageParts(message)
   let index = 0
@@ -346,16 +362,21 @@ export function assistantBlocks(message: ChatThreadMessage): AssistantTimelineBl
     index += 1
   }
 
+  const segments = shelfSegments(shelfParts)
+  const tools = segments.flatMap(segment => segment.type === 'tools' ? segment.tools : [])
+  // Same-message TUI rule: Tool calls, then Response. Pre-tool text stays
+  // above only when it is an interim and the main reply already landed below.
+  const leadText = tools.length && !reply.length && !message.streaming ? [] : narration
+  const bodyText = leadText === narration ? reply : narration
+
   const blocks: AssistantTimelineBlock[] = []
   const firstThought = combineReasoning(leading)
   if (firstThought) blocks.push({ key: 'thinking-lead', type: 'reasoning', part: firstThought })
 
-  narration.forEach((part, at) => {
+  leadText.forEach((part, at) => {
     blocks.push({ key: `text-before-${at}`, type: 'text', part })
   })
 
-  const segments = shelfSegments(shelfParts)
-  const tools = segments.flatMap(segment => segment.type === 'tools' ? segment.tools : [])
   if (tools.length) {
     blocks.push({ key: 'shelf', type: 'shelf', tools, segments })
   } else {
@@ -364,7 +385,7 @@ export function assistantBlocks(message: ChatThreadMessage): AssistantTimelineBl
     }
   }
 
-  reply.forEach((part, at) => {
+  bodyText.forEach((part, at) => {
     blocks.push({ key: `text-after-${at}`, type: 'text', part })
   })
   return blocks
