@@ -7,6 +7,7 @@ export default defineNuxtPlugin(() => {
     return Promise.allSettled([
       useSessions().refresh(),
       useProfiles().refresh(),
+      useChatController().hydrateReasoningFromConfig(),
       ...(rebindChat ? [useChatController().rebindAfterReconnect()] : [])
     ])
   }

@@ -207,6 +207,7 @@ export function useChatController() {
   const sessionProvider = useState('hermes-session-provider', () => '')
   const sessionReasoningEffort = useState<ReasoningEffort>('hermes-session-reasoning', () => '')
   const sessionReasoningKnown = useState('hermes-session-reasoning-known', () => false)
+  const serverReasoningEffort = useState<ReasoningEffort>('hermes-server-reasoning', () => '')
   const messages = useState<ChatThreadMessage[]>('hermes-messages', () => [])
   const status = useState<ChatStatus>('hermes-chat-status', () => 'ready')
   const errorText = useState('hermes-chat-error', () => '')
@@ -226,9 +227,18 @@ export function useChatController() {
 
   const activeModel = computed(() => asSessionModel(sessionModel.value) || asSessionModel(model.value))
   const activeProvider = computed(() => sessionProvider.value.trim() || provider.value.trim())
-  const activeReasoningEffort = computed(() => (
-    sessionReasoningKnown.value ? sessionReasoningEffort.value : reasoningEffort.value
-  ))
+  const activeReasoningEffort = computed(() => {
+    if (sessionReasoningKnown.value) {
+      return asSessionReasoningEffort(sessionReasoningEffort.value)
+        || asSessionReasoningEffort(serverReasoningEffort.value)
+    }
+    if (storedSessionId.value) {
+      return asSessionReasoningEffort(sessionReasoningEffort.value)
+        || asSessionReasoningEffort(serverReasoningEffort.value)
+    }
+    return asSessionReasoningEffort(reasoningEffort.value)
+      || asSessionReasoningEffort(serverReasoningEffort.value)
+  })
 
   function inferProvider(modelId: string) {
     for (const group of catalog.providers.value) {
@@ -249,8 +259,31 @@ export function useChatController() {
     if (!info) return
     if (info.model) applySessionSelection(info.model, info.provider || '')
     if (typeof info.reasoning_effort !== 'string') return
-    sessionReasoningEffort.value = asSessionReasoningEffort(info.reasoning_effort)
+    const effort = asSessionReasoningEffort(info.reasoning_effort)
+    if (!effort) return
+    sessionReasoningEffort.value = effort
     sessionReasoningKnown.value = true
+  }
+
+  async function hydrateReasoningFromConfig() {
+    if (sessionReasoningKnown.value && asSessionReasoningEffort(sessionReasoningEffort.value)) return
+    if (!sessionId.value && asSessionReasoningEffort(serverReasoningEffort.value)) return
+    try {
+      const got = await gateway.request<{ value?: string }>('config.get', {
+        key: 'reasoning',
+        ...(sessionId.value ? { session_id: sessionId.value } : {})
+      })
+      const effort = asSessionReasoningEffort(got?.value)
+      if (!effort) return
+      if (sessionId.value) {
+        sessionReasoningEffort.value = effort
+        sessionReasoningKnown.value = true
+        return
+      }
+      serverReasoningEffort.value = effort
+    } catch {
+      // older gateways may not expose this key
+    }
   }
 
   function clearSessionRuntime() {
@@ -523,21 +556,24 @@ export function useChatController() {
       const id = event.session_id || event.payload?.stored_session_id
       if (!sameSession(id)) return
       applySessionRuntime(event.payload)
+      void hydrateReasoningFromConfig()
     })
   }
 
   async function ensureDraft() {
     if (sessionId.value) return sessionId.value
+    const draftEffort = asSessionReasoningEffort(reasoningEffort.value)
     const created = await gateway.request<{ session_id: string, stored_session_id?: string, info?: SessionRuntimeInfo }>('session.create', {
       source: 'webui',
       close_on_disconnect: false,
       ...(activeModel.value ? { model: activeModel.value } : {}),
       ...(activeProvider.value ? { provider: activeProvider.value } : {}),
-      ...(activeReasoningEffort.value ? { reasoning_effort: activeReasoningEffort.value } : {})
+      ...(draftEffort ? { reasoning_effort: draftEffort } : {})
     })
     sessionId.value = created.session_id
     storedSessionId.value = created.stored_session_id || created.session_id
     applySessionRuntime(created.info)
+    void hydrateReasoningFromConfig()
     return sessionId.value
   }
 
@@ -557,6 +593,7 @@ export function useChatController() {
       messages.value = mapHistoryMessages(resumed.messages || [])
     }
     applySessionRuntime(resumed.info)
+    void hydrateReasoningFromConfig()
     if (resumed.pending_approval) approval.value = resumed.pending_approval
     if (resumed.running) {
       status.value = 'streaming'
@@ -966,10 +1003,12 @@ export function useChatController() {
   }
 
   async function setSessionReasoningEffort(value: ReasoningEffort) {
-    sessionReasoningEffort.value = value
+    const effort = asSessionReasoningEffort(value)
+    if (!effort) return
+    sessionReasoningEffort.value = effort
     sessionReasoningKnown.value = true
     if (!sessionId.value) {
-      reasoningEffort.value = value
+      reasoningEffort.value = effort
       return
     }
     await persistRuntimeOptions()
@@ -1006,6 +1045,7 @@ export function useChatController() {
     clearPendingSteer,
     editMessage,
     errorText,
+    hydrateReasoningFromConfig,
     isActiveId,
     liveHint,
     providerWait,

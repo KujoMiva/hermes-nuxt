@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ReasoningEffort } from '~/types/hermes'
+import type { NamedReasoningEffort } from '~/utils/reasoning'
 
 defineOptions({ name: 'ChatComposerBar' })
 
@@ -95,13 +95,16 @@ async function confirmExpensiveModel() {
   }
 }
 
-async function chooseEffort(id: ReasoningEffort) {
+async function chooseEffort(id: NamedReasoningEffort) {
   sheet.value = null
   await chat.setSessionReasoningEffort(id)
 }
 
 onMounted(() => {
-  if (isConfigured.value) void refreshModels()
+  if (isConfigured.value) {
+    void refreshModels()
+    void chat.hydrateReasoningFromConfig()
+  }
 })
 </script>
 
@@ -211,10 +214,10 @@ onMounted(() => {
       <div class="sheet-list">
         <button
           v-for="item in REASONING_EFFORTS"
-          :key="item.id || 'follow'"
+          :key="item.id"
           type="button"
           class="sheet-option"
-          :class="{ 'is-active': (chat.activeReasoningEffort.value || '') === item.id }"
+          :class="{ 'is-active': chat.activeReasoningEffort.value === item.id }"
           @click="chooseEffort(item.id)"
         >
           <span class="sheet-option__text">
@@ -225,7 +228,7 @@ onMounted(() => {
             >{{ item.description }}</span>
           </span>
           <UiIcon
-            v-if="(chat.activeReasoningEffort.value || '') === item.id"
+            v-if="chat.activeReasoningEffort.value === item.id"
             name="i-lucide-check"
             :size="16"
           />
