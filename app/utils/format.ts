@@ -254,6 +254,18 @@ export function formatClock(value?: string | number | null) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
+const MEMORY_SEARCH_TOOLS = new Set([
+  'honcho_search',
+  'mem0_search',
+  'memory_search',
+  'supermemory-search',
+  'supermemory_search'
+])
+
+export function isMemorySearchTool(name?: string) {
+  return MEMORY_SEARCH_TOOLS.has(String(name || '').trim())
+}
+
 export function toolDisplayName(name?: string) {
   const raw = String(name || 'tool').trim()
   if (!raw) return 'Tool'

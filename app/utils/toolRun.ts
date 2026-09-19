@@ -1,5 +1,5 @@
 import type { ChatToolEvent } from '~/types/hermes'
-import { formatShortDuration, parseToolArgs, toolDisplayName } from './format'
+import { formatShortDuration, isMemorySearchTool, parseToolArgs, toolDisplayName } from './format'
 
 type RunCategory = 'delegate' | 'edit' | 'explore' | 'other' | 'run'
 
@@ -174,16 +174,34 @@ export function summarizeToolRun(tools: readonly ChatToolEvent[], live: boolean)
   const liveCategory = narrating ? toolCategory(narrating.name) : null
   const byCategory = new Map<RunCategory, ChatToolEvent[]>()
   const extra: string[] = []
+  const memorySearches: ChatToolEvent[] = []
+  const skillViews: ChatToolEvent[] = []
 
   for (const tool of tools) {
     if (tool.name === 'skill_view') {
-      extra.push(live && tool === narrating ? '正在查看技能' : '查看了技能')
+      skillViews.push(tool)
+      continue
+    }
+    if (isMemorySearchTool(tool.name)) {
+      memorySearches.push(tool)
       continue
     }
     const category = toolCategory(tool.name)
     const group = byCategory.get(category)
     if (group) group.push(tool)
     else byCategory.set(category, [tool])
+  }
+
+  if (memorySearches.length) {
+    const searching = Boolean(live && memorySearches.some(tool => tool === narrating))
+    extra.push(
+      memorySearches.length === 1
+        ? (searching ? '正在搜索记忆' : '搜索了记忆')
+        : (searching ? `正在搜索 ${memorySearches.length} 条记忆` : `搜索了 ${memorySearches.length} 条记忆`)
+    )
+  }
+  if (skillViews.length) {
+    extra.push(live && skillViews.some(tool => tool === narrating) ? '正在查看技能' : '查看了技能')
   }
 
   const clauses = [

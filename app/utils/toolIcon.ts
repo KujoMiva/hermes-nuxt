@@ -14,7 +14,10 @@ const TOOL_ICONS: Record<string, string> = {
   execute_code: 'i-lucide-terminal',
   image_generate: 'i-lucide-image',
   list_files: 'i-lucide-files',
+  mem0_search: 'i-lucide-brain',
   memory: 'i-lucide-brain',
+  memory_search: 'i-lucide-brain',
+  honcho_search: 'i-lucide-brain',
   patch: 'i-lucide-pencil',
   read_file: 'i-lucide-file',
   search_files: 'i-lucide-search',
@@ -31,6 +34,10 @@ const TOOL_ICONS: Record<string, string> = {
 
 const PREFIX_ICONS = [
   { prefix: 'browser_', icon: 'i-lucide-globe' },
+  { prefix: 'honcho_', icon: 'i-lucide-brain' },
+  { prefix: 'mem0_', icon: 'i-lucide-brain' },
+  { prefix: 'supermemory-', icon: 'i-lucide-brain' },
+  { prefix: 'supermemory_', icon: 'i-lucide-brain' },
   { prefix: 'web_', icon: 'i-lucide-globe' }
 ] as const
 

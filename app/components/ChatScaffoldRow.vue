@@ -55,8 +55,9 @@ const emit = defineEmits<{
 }
 
 .scaffold-row__hit {
-  display: inline-flex;
+  display: flex;
   min-width: 0;
+  flex: 1 1 auto;
   max-width: 100%;
   align-items: center;
   gap: 0.3rem;
@@ -76,9 +77,8 @@ const emit = defineEmits<{
 
 .scaffold-row__label {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1 1 auto;
+  word-break: break-all;
 }
 
 .scaffold-row__caret {

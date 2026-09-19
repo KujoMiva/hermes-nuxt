@@ -3,6 +3,7 @@ import { toolIconName, toolRowIcon } from '~/utils/toolIcon'
 
 describe('toolIconName', () => {
   it('maps desktop tool kinds onto lucide icons', () => {
+    expect(toolIconName('mem0_search')).toBe('i-lucide-brain')
     expect(toolIconName('web_search')).toBe('i-lucide-search')
     expect(toolIconName('web_extract')).toBe('i-lucide-globe')
     expect(toolIconName('terminal')).toBe('i-lucide-terminal')
