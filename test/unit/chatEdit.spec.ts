@@ -5,6 +5,8 @@ import {
   asRowId,
   freezeInterruptedMessages,
   isSessionBusyError,
+  reattachSessionImages,
+  resolveDurableRowId,
   truncateSubmitParams,
   visibleUserOrdinal
 } from '~/utils/chatEdit'
@@ -76,5 +78,37 @@ describe('isSessionBusyError', () => {
   it('detects gateway busy text', () => {
     expect(isSessionBusyError(new Error('Session busy'))).toBe(true)
     expect(isSessionBusyError('nope')).toBe(false)
+  })
+})
+
+describe('resolveDurableRowId', () => {
+  it('matches a cleaned caption against persisted @image lines', async () => {
+    const path = String.raw`C:\Users\me\hermes\images\upload_1.jpg`
+    const request = async () => ({
+      messages: [
+        { role: 'user', row_id: 12, text: `测试一下识图\n@image:\`${path}\`` }
+      ]
+    })
+    expect(await resolveDurableRowId(request, 's1', '测试一下识图')).toBe(12)
+  })
+})
+
+describe('reattachSessionImages', () => {
+  it('re-queues gateway paths with image.attach', async () => {
+    const path = String.raw`C:\Users\me\hermes\images\upload_1.jpg`
+    const calls: Array<{ method: string, params?: Record<string, unknown> }> = []
+    const request = async <T = unknown>(method: string, params?: Record<string, unknown>) => {
+      calls.push({ method, params })
+      return { path } as T
+    }
+    await expect(reattachSessionImages(request, 's1', [path, 'blob:https://app/1'])).resolves.toEqual([path])
+    expect(calls).toEqual([{ method: 'image.attach', params: { session_id: 's1', path } }])
+  })
+
+  it('throws when every gateway path fails to attach', async () => {
+    const request = async () => {
+      throw new Error('image not found')
+    }
+    await expect(reattachSessionImages(request, 's1', ['/tmp/gone.png'])).rejects.toThrow('image not found')
   })
 })

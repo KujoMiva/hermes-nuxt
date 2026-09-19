@@ -143,7 +143,6 @@ async function onSubmit() {
   if (!text.trim() && !drafts.length) return
   input.value = ''
 
-  const previews = drafts.map(item => item.preview)
   if (drafts.length) {
     uploading.value = true
     uploadIndex.value = 0
@@ -151,15 +150,19 @@ async function onSubmit() {
     uploadAbort?.abort()
     uploadAbort = new AbortController()
     try {
+      const refs: string[] = []
       const loadedBytes = {
         done: 0,
         total: drafts.reduce((sum, draft) => sum + Math.max(draft.file.size, 1), 0)
       }
       for (const [index, draft] of drafts.entries()) {
         uploadIndex.value = index + 1
-        await uploadDraft(draft, loadedBytes)
+        refs.push(await uploadDraft(draft, loadedBytes))
       }
       images.value = []
+      for (const draft of drafts) URL.revokeObjectURL(draft.preview)
+      await chat.send(text, refs)
+      return
     } catch (error) {
       if (isAbortError(error)) return
       input.value = text
@@ -176,7 +179,7 @@ async function onSubmit() {
     }
   }
 
-  await chat.send(text, previews)
+  await chat.send(text)
 }
 
 onBeforeUnmount(() => {

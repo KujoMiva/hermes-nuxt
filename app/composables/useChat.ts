@@ -18,6 +18,7 @@ import {
   asRowId,
   freezeInterruptedMessages,
   isSessionBusyError,
+  reattachSessionImages,
   resolveDurableRowId,
   truncateSubmitParams,
   visibleUserOrdinal
@@ -747,6 +748,7 @@ export function useChatController() {
         }
       }
 
+      await reattachSessionImages(gateway.request, sid, source.images)
       const result = await submitPrompt(sid, trimmed, trunc)
       messages.value = applySurvivorRowIdMap(messages.value, result?.survivor_row_id_map)
       await openStoredChat()

@@ -1,4 +1,5 @@
 import type { ChatThreadMessage } from '~/types/hermes'
+import { durableUserCaption, gatewayImagePaths } from '~/utils/imageRefs'
 
 type GatewayRequest = <T = unknown>(
   method: string,
@@ -83,11 +84,40 @@ export async function resolveDurableRowId(
     return typeof asRowId(message.row_id) === 'number'
   })
 
-  const matches = durableUsers.filter(message => String(message.text || message.content || '').trim() === wanted)
+  const matches = durableUsers.filter((message) => {
+    return durableUserCaption(String(message.text || message.content || '')) === wanted
+  })
   if (matches.length === 1) return asRowId(matches[0]?.row_id)
   if (matches.length > 1 && typeof expectedOrdinal === 'number' && expectedOrdinal >= durableUsers.length - 1) {
     const last = matches.at(-1)
     return durableUsers.at(-1) === last ? asRowId(last?.row_id) : undefined
   }
   return undefined
+}
+
+export async function reattachSessionImages(
+  request: GatewayRequest,
+  sessionId: string,
+  images?: string[]
+) {
+  const paths = gatewayImagePaths(images)
+  if (!paths.length) return []
+
+  const attached: string[] = []
+  const errors: string[] = []
+  for (const path of paths) {
+    try {
+      const result = await request<{ path?: string }>('image.attach', {
+        session_id: sessionId,
+        path
+      })
+      attached.push(typeof result?.path === 'string' && result.path ? result.path : path)
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error))
+    }
+  }
+  if (!attached.length) {
+    throw new Error(errors[0] || '无法重新附加图片')
+  }
+  return attached
 }

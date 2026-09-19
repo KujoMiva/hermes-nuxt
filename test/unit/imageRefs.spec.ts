@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { chatMediaSrc, extractImageRefs, isGatewayImagePath, unwrapImageRefValue } from '~/utils/imageRefs'
+import {
+  chatMediaSrc,
+  durableUserCaption,
+  extractImageRefs,
+  formatImageRefValue,
+  gatewayImagePaths,
+  isGatewayImagePath,
+  persistUserMessageText,
+  unwrapImageRefValue
+} from '~/utils/imageRefs'
 
 describe('unwrapImageRefValue', () => {
   it('strips wrapping quotes', () => {
@@ -46,5 +55,24 @@ describe('chatMediaSrc', () => {
     expect(chatMediaSrc('relative.png')).toBe('')
     expect(isGatewayImagePath('/opt/data/cat.png')).toBe(true)
     expect(isGatewayImagePath('https://cdn.example/a.png')).toBe(false)
+  })
+
+  it('unwraps proxied media urls back to the gateway path', () => {
+    const path = String.raw`C:\Users\me\hermes\images\a.jpg`
+    expect(gatewayImagePaths([`/api/media?path=${encodeURIComponent(path)}`])).toEqual([path])
+  })
+})
+
+describe('persistUserMessageText', () => {
+  it('quotes windows paths the same way the gateway persists them', () => {
+    const path = String.raw`C:\Users\me\hermes\images\upload 1.jpg`
+    expect(formatImageRefValue(path)).toBe(`\`${path}\``)
+    expect(durableUserCaption(`测试一下识图\n@image:\`${path}\``)).toBe('测试一下识图')
+    expect(persistUserMessageText('测试一下识图', [path])).toBe(`测试一下识图\n@image:\`${path}\``)
+  })
+
+  it('ignores blob previews that cannot be reattached by path', () => {
+    expect(gatewayImagePaths(['blob:https://app/1', 'https://cdn.example/a.png'])).toEqual([])
+    expect(persistUserMessageText('caption', ['blob:https://app/1'])).toBe('caption')
   })
 })
