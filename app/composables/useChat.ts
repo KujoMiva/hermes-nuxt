@@ -23,6 +23,7 @@ import {
   visibleUserOrdinal
 } from '~/utils/chatEdit'
 import { chatUid, sleep } from '~/utils/chatRun'
+import { shouldReplaceTranscriptOnRebind } from '~/utils/gatewayReconnect'
 import { isGenericModel } from '~/composables/useModelCatalog'
 import { isBusySessionModelSwitch, sessionModelSetValue } from '~/utils/modelSettings'
 import { isSubagentTool, isToolResultFailed } from '~/utils/toolRun'
@@ -520,6 +521,7 @@ export function useChatController() {
     session_id?: string
     session_key?: string
   }, replaceMessages: boolean) {
+    const keepLive = !replaceMessages
     sessionId.value = resumed.session_id || id
     storedSessionId.value = resumed.session_key || id
     if (replaceMessages) {
@@ -534,8 +536,10 @@ export function useChatController() {
       if (last?.role === 'assistant') {
         assistantId.value = last.id
         patchParts(last, markLastStreamPartLive(messageParts(last)), { streaming: true })
+      } else if (keepLive && !assistantId.value) {
+        appendAssistant()
       }
-    } else if (status.value === 'streaming' || status.value === 'submitted') {
+    } else if (!keepLive && (status.value === 'streaming' || status.value === 'submitted')) {
       messages.value = freezeInterruptedMessages(messages.value)
       status.value = 'ready'
       assistantId.value = ''
@@ -585,6 +589,7 @@ export function useChatController() {
     const id = storedSessionId.value
     if (!id) return
     const token = historyLoad
+    const replaceMessages = shouldReplaceTranscriptOnRebind(status.value)
     try {
       const resumed = await gateway.request<{
         session_id?: string
@@ -598,7 +603,7 @@ export function useChatController() {
       errorText.value = ''
       liveHint.value = ''
       providerWait.value = ''
-      applyResume(id, resumed, true)
+      applyResume(id, resumed, replaceMessages)
     } catch {
       // keep the on-screen transcript if the rebound RPC fails
     }

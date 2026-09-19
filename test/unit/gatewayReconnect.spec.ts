@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shouldReconnectOnResume } from '~/utils/gatewayReconnect'
+import { shouldReconnectOnResume, shouldReplaceTranscriptOnRebind } from '~/utils/gatewayReconnect'
 
 const base = {
   connectingStartedAt: 0,
@@ -17,22 +17,22 @@ describe('shouldReconnectOnResume', () => {
     expect(shouldReconnectOnResume(base)).toBe('reconnect')
   })
 
-  it('keeps a fresh open socket and only pings', () => {
+  it('keeps a fresh open socket', () => {
     expect(shouldReconnectOnResume({
       ...base,
       connectionState: 'open',
       lastInboundAt: 25_000,
       readyState: 1
-    })).toBe('ping')
+    })).toBe('keep')
   })
 
-  it('reconnects an open socket that went silent while frozen', () => {
+  it('pings an open socket that went silent, and does not tear it down', () => {
     expect(shouldReconnectOnResume({
       ...base,
       connectionState: 'open',
       lastInboundAt: 1_000,
       readyState: 1
-    })).toBe('reconnect')
+    })).toBe('ping')
   })
 
   it('does not stack a second connect onto a live handshake', () => {
@@ -67,5 +67,16 @@ describe('shouldReconnectOnResume', () => {
     expect(shouldReconnectOnResume({ ...base, hidden: true })).toBe('keep')
     expect(shouldReconnectOnResume({ ...base, online: false })).toBe('keep')
     expect(shouldReconnectOnResume({ ...base, wantOpen: false })).toBe('keep')
+  })
+})
+
+describe('shouldReplaceTranscriptOnRebind', () => {
+  it('keeps the live transcript while a turn is in flight', () => {
+    expect(shouldReplaceTranscriptOnRebind('submitted')).toBe(false)
+    expect(shouldReplaceTranscriptOnRebind('streaming')).toBe(false)
+  })
+
+  it('reloads history after a finished turn', () => {
+    expect(shouldReplaceTranscriptOnRebind('ready')).toBe(true)
   })
 })

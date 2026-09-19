@@ -1,12 +1,13 @@
 export default defineNuxtPlugin(() => {
   const { session, refresh } = useSessionInfo()
   const gateway = useGateway()
+  let sawOpen = false
 
-  function hydrateSurfaces() {
+  function hydrateSurfaces(rebindChat = false) {
     return Promise.allSettled([
       useSessions().refresh(),
       useProfiles().refresh(),
-      useChatController().rebindAfterReconnect()
+      ...(rebindChat ? [useChatController().rebindAfterReconnect()] : [])
     ])
   }
 
@@ -27,6 +28,7 @@ export default defineNuxtPlugin(() => {
         .then(() => hydrateSurfaces())
         .catch(() => {})
     } else {
+      sawOpen = false
       gateway.close()
     }
   })
@@ -35,9 +37,11 @@ export default defineNuxtPlugin(() => {
     if (!import.meta.client || next !== 'open' || prev === 'open' || !prev) {
       return
     }
+    const rebindChat = sawOpen
+    sawOpen = true
     if (!session.value.loggedIn) {
       return
     }
-    void hydrateSurfaces()
+    void hydrateSurfaces(rebindChat)
   })
 })

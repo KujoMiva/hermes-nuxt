@@ -29,7 +29,7 @@ export function shouldReconnectOnResume(input: ResumeReconnectInput): ResumeReco
   }
 
   if (input.readyState === WS_OPEN && input.connectionState === 'open') {
-    return input.now - input.lastInboundAt >= OPEN_STALE_MS ? 'reconnect' : 'ping'
+    return input.now - input.lastInboundAt >= OPEN_STALE_MS ? 'ping' : 'keep'
   }
 
   if (input.connectionState === 'connecting' || input.readyState === WS_CONNECTING) {
@@ -37,4 +37,8 @@ export function shouldReconnectOnResume(input: ResumeReconnectInput): ResumeReco
   }
 
   return 'reconnect'
+}
+
+export function shouldReplaceTranscriptOnRebind(status: string) {
+  return status !== 'submitted' && status !== 'streaming'
 }

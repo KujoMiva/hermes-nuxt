@@ -174,7 +174,10 @@ export function useGateway() {
     clearReconnectTimer()
 
     if (action === 'ping') {
-      void gw.request('gateway.ping', {}, 5_000).catch(() => {
+      void gw.request('gateway.ping', {}, 8_000).catch(() => {
+        if (gw.socketReadyState === WebSocket.OPEN) {
+          return
+        }
         dropTransport()
         void ensureConnected().catch(() => {})
       })
@@ -201,7 +204,6 @@ export function useGateway() {
       }
     })
     window.addEventListener('pageshow', onResume)
-    window.addEventListener('focus', onResume)
     window.addEventListener('online', onResume)
     document.addEventListener('resume', onResume)
   }
