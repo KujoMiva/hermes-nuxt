@@ -47,6 +47,9 @@ export function shouldVerifyOpenSocket(lastInboundAt: number, now: number) {
   return now - lastInboundAt >= CONNECTING_STALE_MS
 }
 
-export function shouldReplaceTranscriptOnRebind(status: string) {
-  return status !== 'submitted' && status !== 'streaming'
+export function shouldReplaceTranscriptOnRebind(_status?: string, _running?: boolean) {
+  // A dropped socket loses in-flight events. Always load the session.resume
+  // snapshot so turns that finished (or advanced) while a mobile tab was
+  // frozen catch up when the page is visible again.
+  return true
 }

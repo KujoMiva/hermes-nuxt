@@ -99,12 +99,10 @@ describe('shouldVerifyOpenSocket', () => {
 })
 
 describe('shouldReplaceTranscriptOnRebind', () => {
-  it('keeps the live transcript while a turn is in flight', () => {
-    expect(shouldReplaceTranscriptOnRebind('submitted')).toBe(false)
-    expect(shouldReplaceTranscriptOnRebind('streaming')).toBe(false)
-  })
-
-  it('reloads history after a finished turn', () => {
+  it('reloads resume history after a dropped socket, even mid-turn', () => {
+    expect(shouldReplaceTranscriptOnRebind('submitted', true)).toBe(true)
+    expect(shouldReplaceTranscriptOnRebind('streaming', true)).toBe(true)
+    expect(shouldReplaceTranscriptOnRebind('streaming', false)).toBe(true)
     expect(shouldReplaceTranscriptOnRebind('ready')).toBe(true)
   })
 })

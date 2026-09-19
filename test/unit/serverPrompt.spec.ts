@@ -81,7 +81,7 @@ describe('applyOpenPrompt', () => {
       {
         approval: () => seen.push('approval'),
         clarify: () => seen.push('clarify'),
-        sudo: (value) => seen.push(`sudo:${value.command}`)
+        sudo: value => seen.push(`sudo:${value.command}`)
       }
     )
     expect(seen).toEqual(['sudo:systemctl restart nginx'])
