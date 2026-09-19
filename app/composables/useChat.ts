@@ -1,4 +1,4 @@
-import type { ChatApproval, ChatStatus, ChatStopKind, ChatThreadMessage, ChatToolEvent } from '~/types/hermes'
+import type { ChatApproval, ChatStatus, ChatStopKind, ChatThreadMessage, ChatToolEvent, ReasoningEffort, SessionRuntimeInfo } from '~/types/hermes'
 import {
   appendStreamPart,
   appendToolPart,
@@ -27,6 +27,7 @@ import { chatUid, sleep } from '~/utils/chatRun'
 import { shouldReplaceTranscriptOnRebind } from '~/utils/gatewayReconnect'
 import { isGenericModel } from '~/composables/useModelCatalog'
 import { isBusySessionModelSwitch, sessionModelSetValue } from '~/utils/modelSettings'
+import { asSessionReasoningEffort } from '~/utils/reasoning'
 import { isSubagentTool, isToolResultFailed } from '~/utils/toolRun'
 import { mapSessionMessage, mergeAssistantMessages, mergeAssistantTurns } from '~/utils/sessionMessages'
 import {
@@ -204,6 +205,8 @@ export function useChatController() {
   const storedSessionId = useState('hermes-stored-session', () => '')
   const sessionModel = useState('hermes-session-model', () => '')
   const sessionProvider = useState('hermes-session-provider', () => '')
+  const sessionReasoningEffort = useState<ReasoningEffort>('hermes-session-reasoning', () => '')
+  const sessionReasoningKnown = useState('hermes-session-reasoning-known', () => false)
   const messages = useState<ChatThreadMessage[]>('hermes-messages', () => [])
   const status = useState<ChatStatus>('hermes-chat-status', () => 'ready')
   const errorText = useState('hermes-chat-error', () => '')
@@ -223,6 +226,9 @@ export function useChatController() {
 
   const activeModel = computed(() => asSessionModel(sessionModel.value) || asSessionModel(model.value))
   const activeProvider = computed(() => sessionProvider.value.trim() || provider.value.trim())
+  const activeReasoningEffort = computed(() => (
+    sessionReasoningKnown.value ? sessionReasoningEffort.value : reasoningEffort.value
+  ))
 
   function inferProvider(modelId: string) {
     for (const group of catalog.providers.value) {
@@ -237,6 +243,21 @@ export function useChatController() {
     if (sessionModel.value && !sessionProvider.value) {
       sessionProvider.value = inferProvider(sessionModel.value)
     }
+  }
+
+  function applySessionRuntime(info?: SessionRuntimeInfo | null) {
+    if (!info) return
+    if (info.model) applySessionSelection(info.model, info.provider || '')
+    if (typeof info.reasoning_effort !== 'string') return
+    sessionReasoningEffort.value = asSessionReasoningEffort(info.reasoning_effort)
+    sessionReasoningKnown.value = true
+  }
+
+  function clearSessionRuntime() {
+    sessionModel.value = ''
+    sessionProvider.value = ''
+    sessionReasoningEffort.value = ''
+    sessionReasoningKnown.value = false
   }
 
   function sameSession(eventSession?: string) {
@@ -497,25 +518,31 @@ export function useChatController() {
       const title = event.payload?.title
       if (title) sessions.upsert({ id, title })
     })
+
+    gateway.on<SessionRuntimeInfo>('session.info', (event) => {
+      const id = event.session_id || event.payload?.stored_session_id
+      if (!sameSession(id)) return
+      applySessionRuntime(event.payload)
+    })
   }
 
   async function ensureDraft() {
     if (sessionId.value) return sessionId.value
-    const created = await gateway.request<{ session_id: string, stored_session_id?: string, info?: { model?: string, provider?: string } }>('session.create', {
+    const created = await gateway.request<{ session_id: string, stored_session_id?: string, info?: SessionRuntimeInfo }>('session.create', {
       source: 'webui',
       close_on_disconnect: false,
       ...(activeModel.value ? { model: activeModel.value } : {}),
       ...(activeProvider.value ? { provider: activeProvider.value } : {}),
-      ...(reasoningEffort.value ? { reasoning_effort: reasoningEffort.value } : {})
+      ...(activeReasoningEffort.value ? { reasoning_effort: activeReasoningEffort.value } : {})
     })
     sessionId.value = created.session_id
     storedSessionId.value = created.stored_session_id || created.session_id
-    if (created.info?.model) applySessionSelection(created.info.model, created.info.provider || '')
+    applySessionRuntime(created.info)
     return sessionId.value
   }
 
   function applyResume(id: string, resumed: {
-    info?: { model?: string, provider?: string }
+    info?: SessionRuntimeInfo
     messages?: unknown[]
     pending_approval?: ChatApproval
     running?: boolean
@@ -529,7 +556,7 @@ export function useChatController() {
       revokeBlobImages(messages.value)
       messages.value = mapHistoryMessages(resumed.messages || [])
     }
-    if (resumed.info?.model) applySessionSelection(resumed.info.model, resumed.info.provider || '')
+    applySessionRuntime(resumed.info)
     if (resumed.pending_approval) approval.value = resumed.pending_approval
     if (resumed.running) {
       status.value = 'streaming'
@@ -551,6 +578,7 @@ export function useChatController() {
     const token = ++historyLoad
     sessionId.value = ''
     storedSessionId.value = id
+    clearSessionRuntime()
     revokeBlobImages(messages.value)
     messages.value = []
     approval.value = null
@@ -568,7 +596,7 @@ export function useChatController() {
         session_key?: string
         messages?: unknown[]
         running?: boolean
-        info?: { model?: string, provider?: string }
+        info?: SessionRuntimeInfo
         pending_approval?: ChatApproval
       }>('session.resume', { session_id: id })
       if (token !== historyLoad) return
@@ -597,7 +625,7 @@ export function useChatController() {
         session_key?: string
         messages?: unknown[]
         running?: boolean
-        info?: { model?: string, provider?: string }
+        info?: SessionRuntimeInfo
         pending_approval?: ChatApproval
       }>('session.resume', { session_id: id })
       if (token !== historyLoad || storedSessionId.value !== id) return
@@ -924,11 +952,12 @@ export function useChatController() {
   }
 
   async function persistRuntimeOptions() {
-    if (!sessionId.value || !reasoningEffort.value) return
+    const value = activeReasoningEffort.value
+    if (!sessionId.value || !value) return
     try {
       await gateway.request('config.set', {
         key: 'reasoning',
-        value: reasoningEffort.value,
+        value,
         session_id: sessionId.value
       })
     } catch {
@@ -936,10 +965,21 @@ export function useChatController() {
     }
   }
 
+  async function setSessionReasoningEffort(value: ReasoningEffort) {
+    sessionReasoningEffort.value = value
+    sessionReasoningKnown.value = true
+    if (!sessionId.value) {
+      reasoningEffort.value = value
+      return
+    }
+    await persistRuntimeOptions()
+  }
+
   function resetLocal() {
     historyLoad += 1
     sessionId.value = ''
     storedSessionId.value = ''
+    clearSessionRuntime()
     revokeBlobImages(messages.value)
     messages.value = []
     approval.value = null
@@ -958,6 +998,7 @@ export function useChatController() {
   return {
     activeModel,
     activeProvider,
+    activeReasoningEffort,
     approval,
     attachImage,
     branchFromMessage,
@@ -982,7 +1023,9 @@ export function useChatController() {
     sessionId,
     sessionModel,
     sessionProvider,
+    sessionReasoningEffort,
     setSessionModel,
+    setSessionReasoningEffort,
     status,
     steer,
     stop,

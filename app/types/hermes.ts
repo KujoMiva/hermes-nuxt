@@ -36,6 +36,13 @@ export interface HermesSession {
   hidden?: boolean
 }
 
+export interface SessionRuntimeInfo {
+  model?: string
+  provider?: string
+  reasoning_effort?: string
+  stored_session_id?: string
+}
+
 export interface HermesToolCall {
   id?: string
   type?: string

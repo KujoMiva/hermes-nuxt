@@ -4,7 +4,7 @@ import type { ReasoningEffort } from '~/types/hermes'
 defineOptions({ name: 'ChatComposerBar' })
 
 const chat = useChatController()
-const { isConfigured, reasoningEffort } = useConnection()
+const { isConfigured } = useConnection()
 const {
   groups: modelGroups,
   loading: modelsLoading,
@@ -19,7 +19,7 @@ const query = ref('')
 const expensiveConfirm = ref<{ id: string, provider: string, message: string } | null>(null)
 const confirmingExpensive = ref(false)
 
-const effortChip = computed(() => reasoningEffortTitle(reasoningEffort.value))
+const effortChip = computed(() => reasoningEffortTitle(chat.activeReasoningEffort.value))
 
 const modelLabel = computed(() => {
   const id = chat.sessionModel.value?.trim()
@@ -96,9 +96,8 @@ async function confirmExpensiveModel() {
 }
 
 async function chooseEffort(id: ReasoningEffort) {
-  reasoningEffort.value = id
   sheet.value = null
-  if (chat.sessionId.value) await chat.persistRuntimeOptions()
+  await chat.setSessionReasoningEffort(id)
 }
 
 onMounted(() => {
@@ -205,7 +204,7 @@ onMounted(() => {
             思考强度
           </p>
           <p class="sheet-head__desc">
-            下一轮随请求发给 API。读不到 CLI 里 /reasoning 的当前值。
+            当前会话的思考强度，打开对话时从网关读取。
           </p>
         </div>
       </div>
@@ -215,7 +214,7 @@ onMounted(() => {
           :key="item.id || 'follow'"
           type="button"
           class="sheet-option"
-          :class="{ 'is-active': (reasoningEffort || '') === item.id }"
+          :class="{ 'is-active': (chat.activeReasoningEffort.value || '') === item.id }"
           @click="chooseEffort(item.id)"
         >
           <span class="sheet-option__text">
@@ -226,7 +225,7 @@ onMounted(() => {
             >{{ item.description }}</span>
           </span>
           <UiIcon
-            v-if="(reasoningEffort || '') === item.id"
+            v-if="(chat.activeReasoningEffort.value || '') === item.id"
             name="i-lucide-check"
             :size="16"
           />
