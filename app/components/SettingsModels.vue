@@ -525,7 +525,8 @@ const showRestWarning = computed(() => !settings.restAvailable.value)
   gap: 0.55rem;
 }
 
-.defaults__row {
+.defaults__row,
+.defaults__toggles {
   :deep(.ui-field) {
     flex: 1 1 100%;
     min-width: 0;
