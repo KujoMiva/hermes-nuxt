@@ -143,13 +143,13 @@ async function onSubmit() {
   if (!text.trim() && !drafts.length) return
   input.value = ''
 
-  if (drafts.length) {
-    uploading.value = true
-    uploadIndex.value = 0
-    uploadPercent.value = 0
-    uploadAbort?.abort()
-    uploadAbort = new AbortController()
-    try {
+  try {
+    if (drafts.length) {
+      uploading.value = true
+      uploadIndex.value = 0
+      uploadPercent.value = 0
+      uploadAbort?.abort()
+      uploadAbort = new AbortController()
       const refs: string[] = []
       const loadedBytes = {
         done: 0,
@@ -163,23 +163,22 @@ async function onSubmit() {
       for (const draft of drafts) URL.revokeObjectURL(draft.preview)
       await chat.send(text, refs)
       return
-    } catch (error) {
-      if (isAbortError(error)) return
-      input.value = text
-      for (const draft of images.value) draft.progress = null
-      toast.add({
-        title: '无法发送图片',
-        description: error instanceof Error ? error.message : String(error),
-        color: 'error'
-      })
-      return
-    } finally {
-      uploading.value = false
-      uploadAbort = null
     }
-  }
 
-  await chat.send(text)
+    await chat.send(text)
+  } catch (error) {
+    if (isAbortError(error)) return
+    input.value = text
+    for (const draft of images.value) draft.progress = null
+    toast.add({
+      title: '无法发送',
+      description: error instanceof Error ? error.message : String(error),
+      color: 'error'
+    })
+  } finally {
+    uploading.value = false
+    uploadAbort = null
+  }
 }
 
 onBeforeUnmount(() => {

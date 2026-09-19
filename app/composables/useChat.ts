@@ -24,7 +24,10 @@ import {
   visibleUserOrdinal
 } from '~/utils/chatEdit'
 import { chatUid, sleep } from '~/utils/chatRun'
-import { shouldReplaceTranscriptOnRebind } from '~/utils/gatewayReconnect'
+import {
+  shouldDeferDraftSubmit,
+  shouldReplaceTranscriptOnRebind
+} from '~/utils/gatewayReconnect'
 import { isGenericModel } from '~/composables/useModelCatalog'
 import { isBusySessionModelSwitch, sessionModelSetValue } from '~/utils/modelSettings'
 import { isSubagentTool, isToolResultFailed } from '~/utils/toolRun'
@@ -506,7 +509,7 @@ export function useChatController() {
       close_on_disconnect: false,
       ...(activeModel.value ? { model: activeModel.value } : {}),
       ...(activeProvider.value ? { provider: activeProvider.value } : {}),
-      ...(reasoningEffort.value ? { reasoning: reasoningEffort.value } : {})
+      ...(reasoningEffort.value ? { reasoning_effort: reasoningEffort.value } : {})
     })
     sessionId.value = created.session_id
     storedSessionId.value = created.stored_session_id || created.session_id
@@ -635,22 +638,43 @@ export function useChatController() {
     errorText.value = ''
     userStopped.value = false
     turnStopKind.value = ''
-    const sid = await ensureDraft()
-    messages.value = [...messages.value, {
-      id: chatUid('u'),
-      role: 'user',
-      content: trimmed,
-      ...(imageSrcs.length ? { images: imageSrcs } : {}),
-      createdAt: Date.now()
-    }]
-    status.value = 'submitted'
-    bindEvents()
+    const pending = usePendingPrompt()
+    let queued = false
     try {
+      const sid = await ensureDraft()
+      const route = useRoute()
+      const stored = storedSessionId.value
+      if (shouldDeferDraftSubmit(route.path, stored)) {
+        pending.value = { text: trimmed, images: imageSrcs }
+        try {
+          await navigateTo(`/chat/${stored}`)
+        } catch (error) {
+          pending.value = null
+          throw error
+        }
+        return
+      }
+
+      messages.value = [...messages.value, {
+        id: chatUid('u'),
+        role: 'user',
+        content: trimmed,
+        ...(imageSrcs.length ? { images: imageSrcs } : {}),
+        createdAt: Date.now()
+      }]
+      queued = true
+      status.value = 'submitted'
+      bindEvents()
       await gateway.request('prompt.submit', { session_id: sid, text: trimmed })
       await openStoredChat()
     } catch (error) {
-      status.value = 'ready'
-      errorText.value = error instanceof Error ? error.message : '发送失败'
+      if (queued) {
+        status.value = 'ready'
+        errorText.value = error instanceof Error ? error.message : '发送失败'
+        return
+      }
+      errorText.value = error instanceof Error ? error.message : '无法创建会话'
+      throw error
     }
   }
 

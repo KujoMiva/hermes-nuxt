@@ -8,7 +8,8 @@ import {
   CONNECTING_STALE_MS,
   RESUME_RECONNECT_THROTTLE_MS,
   shouldDropSocketAfterPingFailure,
-  shouldReconnectOnResume
+  shouldReconnectOnResume,
+  shouldVerifyOpenSocket
 } from '~/utils/gatewayReconnect'
 
 let client: JsonRpcGatewayClient | null = null
@@ -117,8 +118,19 @@ export function useGateway() {
     bindLifecycle()
     const gw = getClient()
     if (gw.connectionState === 'open' && gw.socketReadyState === WebSocket.OPEN) {
-      reconnectAttempt = 0
-      return gw
+      if (!shouldVerifyOpenSocket(gw.lastInboundAt, Date.now())) {
+        reconnectAttempt = 0
+        return gw
+      }
+
+      try {
+        await gw.request('gateway.ping', {}, 8_000)
+        reconnectAttempt = 0
+        lastError.value = ''
+        return gw
+      } catch {
+        dropTransport()
+      }
     }
 
     if (connecting) {

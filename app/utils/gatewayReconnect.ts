@@ -43,6 +43,14 @@ export function shouldDropSocketAfterPingFailure(_readyState: number | null = nu
   return true
 }
 
+export function shouldVerifyOpenSocket(lastInboundAt: number, now: number) {
+  return now - lastInboundAt >= CONNECTING_STALE_MS
+}
+
+export function shouldDeferDraftSubmit(routePath: string, storedSessionId?: string | null) {
+  return Boolean(storedSessionId) && routePath === '/'
+}
+
 export function shouldReplaceTranscriptOnRebind(status: string) {
   return status !== 'submitted' && status !== 'streaming'
 }
