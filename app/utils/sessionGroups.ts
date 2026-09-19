@@ -31,6 +31,45 @@ export function sessionMeta(item: HermesSession) {
   return time
 }
 
+export function sessionRecency(item: HermesSession) {
+  const raw = item.last_active ?? item.started_at
+  if (raw == null || raw === '') return 0
+  if (typeof raw === 'number') return raw > 1e12 ? raw : raw * 1000
+  const parsed = Date.parse(String(raw))
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+/** Pinned first (server `sessions.pinned`), then most recently active. */
+export function sortSessions(list: HermesSession[]) {
+  return [...list].sort((left, right) => {
+    const pin = Number(Boolean(right.pinned)) - Number(Boolean(left.pinned))
+    if (pin) return pin
+    return sessionRecency(right) - sessionRecency(left)
+  })
+}
+
+/** Overlay REST `pinned` onto a gateway `session.list` page and keep pinned rows the window missed. */
+export function overlayPinnedSessions(listed: HermesSession[], remote: HermesSession[]) {
+  const byId = new Map(remote.map(item => [item.id, item]))
+  const seen = new Set<string>()
+  const out: HermesSession[] = []
+
+  for (const item of listed) {
+    seen.add(item.id)
+    const extra = byId.get(item.id)
+    out.push(extra ? { ...item, pinned: Boolean(extra.pinned) } : item)
+  }
+
+  for (const item of remote) {
+    if (!item.pinned || seen.has(item.id) || item.archived || item.hidden) continue
+    if (HIDDEN_SOURCES.has(item.source || '')) continue
+    out.push(item)
+    seen.add(item.id)
+  }
+
+  return sortSessions(out)
+}
+
 export function visibleChatSessions(list: HermesSession[]) {
   return list.filter((item) => {
     if (item.hidden || item.archived) return false
@@ -79,7 +118,7 @@ export function groupChatSessions(
     label: home.label,
     hint: home.hint,
     icon: workspaceIcon('home'),
-    sessions: groups.get('home') || []
+    sessions: sortSessions(groups.get('home') || [])
   }]
 
   for (const [id, sessions] of groups) {
@@ -89,7 +128,7 @@ export function groupChatSessions(
       label: sourceLabel(id),
       hint: '频道',
       icon: workspaceIcon(id),
-      sessions
+      sessions: sortSessions(sessions)
     })
   }
   return rows

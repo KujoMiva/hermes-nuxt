@@ -207,6 +207,7 @@ store.sessions.push({
   source: 'webui',
   hidden: false,
   archived: false,
+  pinned: false,
   messages: [
     { role: 'user', text: '你好', timestamp: now() - 120, row_id: 1 },
     { role: 'assistant', text: '你好，这是远程网关控制台。', timestamp: now() - 118, row_id: 2 }
@@ -223,6 +224,7 @@ function sessionSummary(row) {
     source: row.source || 'webui',
     hidden: Boolean(row.hidden),
     archived: Boolean(row.archived),
+    pinned: Boolean(row.pinned),
     parent_session_id: row.parent_session_id || null
   }
 }
@@ -503,6 +505,7 @@ function handleRpc(frame, send) {
       source: params.source || 'webui',
       hidden: false,
       archived: false,
+      pinned: false,
       messages: [],
       draft: true
     }
@@ -616,6 +619,7 @@ function handleRpc(frame, send) {
       source: 'webui',
       hidden: false,
       archived: false,
+      pinned: false,
       parent_session_id: live.row.id,
       messages: history.map(message => ({ ...message }))
     }
@@ -1044,11 +1048,13 @@ const server = http.createServer(async (req, res) => {
     const body = JSON.parse((await readBody(req)) || '{}')
     if (body.archived != null) stored.archived = Boolean(body.archived)
     if (body.hidden != null) stored.hidden = Boolean(body.hidden)
+    if (body.pinned != null) stored.pinned = Boolean(body.pinned)
     if (body.title != null) stored.title = String(body.title)
     sendJson(res, 200, {
       ok: true,
       archived: Boolean(stored.archived),
       hidden: Boolean(stored.hidden),
+      pinned: Boolean(stored.pinned),
       title: stored.title || ''
     })
     return

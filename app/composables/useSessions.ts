@@ -1,8 +1,13 @@
 import type { HermesSession } from '~/types/hermes'
-import { mergeArchivedSessions, visibleArchivedSessions, visibleChatSessions } from '~/utils/sessionGroups'
+import {
+  mergeArchivedSessions,
+  overlayPinnedSessions,
+  sortSessions,
+  visibleArchivedSessions,
+  visibleChatSessions
+} from '~/utils/sessionGroups'
 import { mergeSessionSearch, searchHitToSession } from '~/utils/sessionSearch'
 
-const PIN_STORE = 'hermes-pinned-ids'
 const SEARCH_DEBOUNCE_MS = 200
 
 let searchWatchBound = false
@@ -24,42 +29,8 @@ function asSession(row: unknown): HermesSession | null {
     parent_session_id: typeof rec.parent_session_id === 'string' ? rec.parent_session_id : null,
     hidden: Boolean(rec.hidden),
     archived: Boolean(rec.archived || rec.hidden),
-    pinned: Boolean(rec.pinned)
+    pinned: rec.pinned === true || rec.pinned === 1 || rec.pinned === '1'
   }
-}
-
-function readPins(): string[] {
-  if (!import.meta.client) return []
-  try {
-    const parsed = JSON.parse(localStorage.getItem(PIN_STORE) || '[]') as unknown
-    return Array.isArray(parsed) ? parsed.map(item => String(item)).filter(Boolean) : []
-  } catch {
-    return []
-  }
-}
-
-function writePins(ids: string[]) {
-  if (!import.meta.client) return
-  localStorage.setItem(PIN_STORE, JSON.stringify(ids))
-}
-
-function recencyValue(item: HermesSession) {
-  const raw = item.last_active ?? item.started_at
-  if (raw == null || raw === '') return 0
-  if (typeof raw === 'number') return raw > 1e12 ? raw : raw * 1000
-  const parsed = Date.parse(String(raw))
-  return Number.isNaN(parsed) ? 0 : parsed
-}
-
-function applyPins(list: HermesSession[], pins: string[]) {
-  const set = new Set(pins)
-  return [...list]
-    .map(item => ({ ...item, pinned: set.has(item.id) }))
-    .sort((left, right) => {
-      const pin = Number(Boolean(right.pinned)) - Number(Boolean(left.pinned))
-      if (pin) return pin
-      return recencyValue(right) - recencyValue(left)
-    })
 }
 
 function uniqueSessions(rows: HermesSession[]) {
@@ -97,7 +68,6 @@ export function useSessions() {
   const loadingMoreArchived = useState('hermes-sessions-archived-loading-more', () => false)
   const archiveHasMore = useState('hermes-sessions-archived-has-more', () => false)
   const archiveFromApi = useState('hermes-sessions-archived-from-api', () => true)
-  const pins = useState<string[]>('hermes-session-pins', () => [])
 
   const searchPool = computed(() => uniqueSessions([
     ...visibleChatSessions(items.value),
@@ -106,10 +76,12 @@ export function useSessions() {
 
   const filtered = computed(() => {
     const needle = query.value.trim()
-    if (needle) return mergeSessionSearch(searchPool.value, serverHits.value, needle)
-    return source.value
-      ? items.value.filter(item => (item.source || '') === source.value)
-      : items.value
+    const rows = needle
+      ? mergeSessionSearch(searchPool.value, serverHits.value, needle)
+      : source.value
+        ? items.value.filter(item => (item.source || '') === source.value)
+        : items.value
+    return sortSessions(rows)
   })
 
   const archivedFiltered = computed(() => {
@@ -126,6 +98,22 @@ export function useSessions() {
       || null
   }
 
+  function profileBody(extra: Record<string, boolean | string> = {}) {
+    const profileId = profile.value.trim()
+    return profileId ? { ...extra, profile: profileId } : extra
+  }
+
+  async function overlayRemotePins() {
+    try {
+      const payload = await dashboard.request<{ sessions?: unknown[] }>('sessions', {
+        query: { archived: 'exclude', order: 'recent', limit: 100 }
+      })
+      items.value = overlayPinnedSessions(items.value, mapSessions(payload.sessions || []))
+    } catch {
+      // session.list stays visible if the REST pin flags are unavailable
+    }
+  }
+
   async function refresh() {
     if (!isConfigured.value) {
       items.value = []
@@ -134,12 +122,12 @@ export function useSessions() {
       loading.value = false
       return
     }
-    if (!pins.value.length) pins.value = readPins()
     loading.value = true
     try {
       const payload = await gateway.request<{ sessions?: unknown[] }>('session.list', { limit: 200 })
-      items.value = applyPins(mapSessions(payload.sessions || []), pins.value)
+      items.value = sortSessions(mapSessions(payload.sessions || []))
       hasMore.value = (payload.sessions || []).length >= 200
+      void overlayRemotePins()
     } catch (error) {
       toast.add({
         title: '无法加载会话',
@@ -199,9 +187,8 @@ export function useSessions() {
         throw restError
       }
 
-      archivedItems.value = applyPins(
-        mergeArchivedSessions(flagged, hiddenListed, visibleIds),
-        pins.value
+      archivedItems.value = sortSessions(
+        mergeArchivedSessions(flagged, hiddenListed, visibleIds)
       )
 
       const flaggedIds = new Set(flagged.map(item => item.id))
@@ -263,30 +250,27 @@ export function useSessions() {
     if (archived) {
       items.value = items.value.filter(item => item.id !== id)
       if (row) {
-        archivedItems.value = applyPins(
-          [{ ...row, archived: true, hidden: false }, ...archivedItems.value.filter(item => item.id !== id)],
-          pins.value
-        )
+        archivedItems.value = sortSessions([
+          { ...row, archived: true, hidden: false },
+          ...archivedItems.value.filter(item => item.id !== id)
+        ])
       }
       return
     }
     archivedItems.value = archivedItems.value.filter(item => item.id !== id)
     if (row) {
-      items.value = applyPins(
-        [{ ...row, archived: false, hidden: false }, ...items.value.filter(item => item.id !== id)],
-        pins.value
-      )
+      items.value = sortSessions([
+        { ...row, archived: false, hidden: false },
+        ...items.value.filter(item => item.id !== id)
+      ])
     }
   }
 
   async function archive(id: string, archived = true) {
-    const body: Record<string, boolean | string> = { archived, hidden: false }
-    const profileId = profile.value.trim()
-    if (profileId) body.profile = profileId
     try {
       await dashboard.request(`sessions/${encodeURIComponent(id)}`, {
         method: 'PATCH',
-        body
+        body: profileBody({ archived, hidden: false })
       })
     } catch {
       await gateway.request('session.set_hidden', { session_id: id, hidden: archived })
@@ -296,14 +280,27 @@ export function useSessions() {
     await loadArchived()
   }
 
+  function applyPinLocal(id: string, pinned: boolean) {
+    const patch = (list: HermesSession[]) => sortSessions(
+      list.map(item => item.id === id ? { ...item, pinned } : item)
+    )
+    items.value = patch(items.value)
+    archivedItems.value = patch(archivedItems.value)
+    serverHits.value = patch(serverHits.value)
+  }
+
   async function pin(id: string, next: boolean) {
-    const set = new Set(pins.value)
-    if (next) set.add(id)
-    else set.delete(id)
-    pins.value = [...set]
-    writePins(pins.value)
-    items.value = applyPins(items.value, pins.value)
-    archivedItems.value = applyPins(archivedItems.value, pins.value)
+    const previous = Boolean(find(id)?.pinned)
+    applyPinLocal(id, next)
+    try {
+      await dashboard.request(`sessions/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: profileBody({ pinned: next })
+      })
+    } catch (error) {
+      applyPinLocal(id, previous)
+      throw error
+    }
   }
 
   async function fork(id: string, count?: number) {
@@ -324,7 +321,7 @@ export function useSessions() {
   function upsert(row: HermesSession) {
     const index = items.value.findIndex(item => item.id === row.id)
     if (index >= 0) items.value[index] = { ...items.value[index], ...row }
-    else items.value = applyPins([row, ...items.value], pins.value)
+    items.value = sortSessions(index >= 0 ? items.value : [row, ...items.value])
   }
 
   if (import.meta.client && !searchWatchBound) {

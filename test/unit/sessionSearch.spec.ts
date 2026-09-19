@@ -57,6 +57,7 @@ describe('searchHitToSession', () => {
       parent_session_id: 's_root',
       message_count: 8
     })
+    expect(hit?.pinned).toBe(false)
   })
 })
 

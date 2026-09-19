@@ -3,7 +3,9 @@ import type { HermesSession } from '~/types/hermes'
 import {
   groupChatSessions,
   mergeArchivedSessions,
+  overlayPinnedSessions,
   sessionMeta,
+  sortSessions,
   visibleArchivedSessions,
   visibleChatSessions,
   workspaceIcon
@@ -77,5 +79,37 @@ describe('sessionMeta', () => {
       end_reason: 'branched',
       last_active: Date.now()
     }))).toMatch(/已分支$/)
+  })
+})
+
+describe('sortSessions', () => {
+  it('puts pinned rows first, then newest activity', () => {
+    const rows = [
+      session({ id: 'old', last_active: 1 }),
+      session({ id: 'pinned-old', last_active: 2, pinned: true }),
+      session({ id: 'new', last_active: 4 }),
+      session({ id: 'pinned-new', last_active: 3, pinned: true })
+    ]
+    expect(sortSessions(rows).map(item => item.id))
+      .toEqual(['pinned-new', 'pinned-old', 'new', 'old'])
+  })
+})
+
+describe('overlayPinnedSessions', () => {
+  it('adopts REST pinned flags and back-fills pinned rows missing from the list page', () => {
+    const listed = [
+      session({ id: 'a', last_active: 2 }),
+      session({ id: 'b', last_active: 1, pinned: true })
+    ]
+    const remote = [
+      session({ id: 'a', last_active: 2, pinned: true }),
+      session({ id: 'b', last_active: 1, pinned: false }),
+      session({ id: 'c', last_active: 3, pinned: true }),
+      session({ id: 'cron', last_active: 5, pinned: true, source: 'cron' })
+    ]
+    expect(overlayPinnedSessions(listed, remote).map(item => item.id))
+      .toEqual(['c', 'a', 'b'])
+    expect(overlayPinnedSessions(listed, remote).map(item => item.pinned))
+      .toEqual([true, true, false])
   })
 })

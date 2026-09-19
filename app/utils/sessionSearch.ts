@@ -41,7 +41,8 @@ export function searchHitToSession(row: unknown): HermesSession | null {
     message_count: Number(rec.message_count || 0) || 0,
     parent_session_id: lineage && lineage !== id ? lineage : (parent || null),
     archived: Boolean(rec.archived),
-    hidden: Boolean(rec.hidden)
+    hidden: Boolean(rec.hidden),
+    pinned: Boolean(rec.pinned)
   }
 }
 
