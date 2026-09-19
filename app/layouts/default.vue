@@ -98,33 +98,35 @@ watch(() => route.fullPath, () => {
         class="shell__navbar"
         :class="{ 'is-settings': isStack }"
       >
-        <UiButton
-          v-if="isStack"
-          class="shell__navbtn"
-          color="neutral"
-          variant="ghost"
-          size="sm"
-          square
-          pill
-          icon="i-lucide-chevron-left"
-          aria-label="返回"
-          @click="goBack"
-        />
-        <UiButton
-          v-else
-          class="shell__navbtn shell__menu"
-          color="neutral"
-          variant="ghost"
-          size="sm"
-          square
-          pill
-          icon="i-lucide-menu"
-          aria-label="打开菜单"
-          @click="openSidebar"
-        />
+        <div class="shell__navslot">
+          <UiButton
+            v-if="isStack"
+            class="shell__navbtn"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            square
+            pill
+            icon="i-lucide-chevron-left"
+            aria-label="返回"
+            @click="goBack"
+          />
+          <UiButton
+            v-else
+            class="shell__navbtn shell__menu"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            square
+            pill
+            icon="i-lucide-menu"
+            aria-label="打开菜单"
+            @click="openSidebar"
+          />
+        </div>
         <div
           class="shell__titles"
-          :class="{ 'is-settings': isStack }"
+          :class="{ 'is-settings': isStack, 'is-chat': isChat }"
         >
           <p class="shell__title">
             {{ title }}
@@ -250,6 +252,13 @@ watch(() => route.fullPath, () => {
   }
 }
 
+.shell__navslot {
+  display: flex;
+  width: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+}
+
 .shell__navbtn {
   flex-shrink: 0;
 }
@@ -276,7 +285,8 @@ watch(() => route.fullPath, () => {
     text-align: start;
   }
 
-  &.is-settings {
+  &.is-settings,
+  &.is-chat {
     text-align: center;
   }
 }
