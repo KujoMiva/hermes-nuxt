@@ -154,6 +154,45 @@ describe('assistantBlocks', () => {
     expect(blocks.map(block => block.type)).toEqual(['text', 'shelf'])
     expect(blocks[0]?.type === 'text' ? blocks[0].part.text : '').toBe('我查一下。')
   })
+
+  it('interleaves each reply with its own Tool calls group like TUI', () => {
+    const blocks = assistantBlocks(assistant({
+      parts: [
+        { type: 'text', text: '我在确认 WebUI 的实际播放路径。' },
+        { type: 'tool', tool: tool('t1', 'search_files') },
+        { type: 'tool', tool: tool('t2', 'search_files') },
+        { type: 'tool', tool: tool('t3', 'search_files') },
+        { type: 'text', text: '我在确认前端是否自己播放音频。' },
+        { type: 'tool', tool: tool('t4', 'search_files') },
+        { type: 'tool', tool: tool('t5', 'search_files') },
+        { type: 'tool', tool: tool('t6', 'search_files') },
+        { type: 'text', text: '我正在把服务器端依赖和浏览器端播放分开。' },
+        { type: 'tool', tool: tool('t7', 'search_files') },
+        { type: 'text', text: '结论是浏览器自己播放。' }
+      ]
+    }))
+    expect(blocks.map(block => block.type)).toEqual([
+      'text', 'shelf',
+      'text', 'shelf',
+      'text', 'shelf',
+      'text'
+    ])
+    expect(blocks.filter(block => block.type === 'shelf').map(block => (
+      block.type === 'shelf' ? block.tools.map(item => item.id) : []
+    ))).toEqual([
+      ['t1', 't2', 't3'],
+      ['t4', 't5', 't6'],
+      ['t7']
+    ])
+    expect(blocks.filter(block => block.type === 'text').map(block => (
+      block.type === 'text' ? block.part.text : ''
+    ))).toEqual([
+      '我在确认 WebUI 的实际播放路径。',
+      '我在确认前端是否自己播放音频。',
+      '我正在把服务器端依赖和浏览器端播放分开。',
+      '结论是浏览器自己播放。'
+    ])
+  })
 })
 
 describe('applyCompleteText', () => {

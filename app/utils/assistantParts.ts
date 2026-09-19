@@ -329,65 +329,78 @@ function shelfSegments(parts: ChatMessagePart[]): AssistantShelfSegment[] {
   return segments
 }
 
-/** First thought, optional interim reply, one tool fold, then the main reply. */
+function isLiveText(part: ChatMessagePart): part is ChatTextPart {
+  return part.type === 'text' && Boolean(part.text.trim() || part.live)
+}
+
+function isLiveReasoning(part: ChatMessagePart): part is ChatReasoningPart {
+  return part.type === 'reasoning' && Boolean(part.text.trim() || part.live)
+}
+
+function isVisibleTool(part: ChatMessagePart) {
+  return part.type === 'tool' && part.tool.kind !== 'thinking'
+}
+
+function shelfHasTools(parts: ChatMessagePart[]) {
+  return parts.some(isVisibleTool)
+}
+
+/** TUI: narration, Tool calls, narration, Tool calls, final reply. Thinking stays with its round. */
 export function assistantBlocks(message: ChatThreadMessage): AssistantTimelineBlock[] {
   const parts = messageParts(message)
-  let index = 0
-
-  const leading: ChatReasoningPart[] = []
-  while (index < parts.length && parts[index]?.type === 'reasoning') {
-    const part = parts[index]
-    if (part?.type === 'reasoning' && (part.text.trim() || part.live)) leading.push(part)
-    index += 1
-  }
-
-  const narration: ChatTextPart[] = []
-  while (index < parts.length && parts[index]?.type === 'text') {
-    const part = parts[index]
-    if (part?.type === 'text' && (part.text.trim() || part.live)) narration.push(part)
-    index += 1
-  }
-
-  const shelfParts: ChatMessagePart[] = []
-  while (index < parts.length && parts[index]?.type !== 'text') {
-    const part = parts[index]
-    if (part) shelfParts.push(part)
-    index += 1
-  }
-
-  const reply: ChatTextPart[] = []
-  while (index < parts.length) {
-    const part = parts[index]
-    if (part?.type === 'text' && (part.text.trim() || part.live)) reply.push(part)
-    index += 1
-  }
-
-  const segments = shelfSegments(shelfParts)
-  const tools = segments.flatMap(segment => segment.type === 'tools' ? segment.tools : [])
-  // Same-message TUI rule: Tool calls, then Response. Pre-tool text stays
-  // above only when it is an interim and the main reply already landed below.
-  const leadText = tools.length && !reply.length && !message.streaming ? [] : narration
-  const bodyText = leadText === narration ? reply : narration
-
   const blocks: AssistantTimelineBlock[] = []
-  const firstThought = combineReasoning(leading)
-  if (firstThought) blocks.push({ key: 'thinking-lead', type: 'reasoning', part: firstThought })
+  let round = 0
+  let thinking: ChatReasoningPart[] = []
+  let texts: ChatTextPart[] = []
+  let shelf: ChatMessagePart[] = []
 
-  leadText.forEach((part, at) => {
-    blocks.push({ key: `text-before-${at}`, type: 'text', part })
-  })
+  function emitRound(moveTextAfterTools: boolean) {
+    const thought = combineReasoning(thinking)
+    const segments = shelfSegments(shelf)
+    const tools = segments.flatMap(segment => segment.type === 'tools' ? segment.tools : [])
+    const lead = [...texts]
+    thinking = []
+    texts = []
+    shelf = []
+    if (!thought && !lead.length && !tools.length && !segments.length) return
 
-  if (tools.length) {
-    blocks.push({ key: 'shelf', type: 'shelf', tools, segments })
-  } else {
-    for (const segment of segments) {
-      if (segment.type === 'reasoning') blocks.push(segment)
+    const before = moveTextAfterTools && tools.length ? [] : lead
+    const after = moveTextAfterTools && tools.length ? lead : []
+
+    if (thought) blocks.push({ key: `thinking-${round}`, type: 'reasoning', part: thought })
+    before.forEach((part, at) => {
+      blocks.push({ key: `text-${round}-a-${at}`, type: 'text', part })
+    })
+    if (tools.length) {
+      blocks.push({ key: `shelf-${round}`, type: 'shelf', tools, segments })
+    } else {
+      for (const segment of segments) {
+        if (segment.type === 'reasoning') {
+          blocks.push({ key: `thinking-${round}-${segment.key}`, type: 'reasoning', part: segment.part })
+        }
+      }
     }
+    after.forEach((part, at) => {
+      blocks.push({ key: `text-${round}-b-${at}`, type: 'text', part })
+    })
+    round += 1
   }
 
-  bodyText.forEach((part, at) => {
-    blocks.push({ key: `text-after-${at}`, type: 'text', part })
-  })
+  for (const part of parts) {
+    if (isLiveReasoning(part)) {
+      if (shelfHasTools(shelf)) shelf.push(part)
+      else thinking.push(part)
+      continue
+    }
+    if (isLiveText(part)) {
+      if (shelfHasTools(shelf)) emitRound(false)
+      texts.push(part)
+      continue
+    }
+    if (isVisibleTool(part)) shelf.push(part)
+  }
+
+  emitRound(Boolean(shelfHasTools(shelf) && !message.streaming))
   return blocks
 }
 
