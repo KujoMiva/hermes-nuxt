@@ -2,7 +2,7 @@ export type ResumeReconnectAction = 'keep' | 'ping' | 'reconnect'
 
 export const RESUME_RECONNECT_THROTTLE_MS = 1_000
 export const CONNECTING_STALE_MS = 8_000
-export const OPEN_STALE_MS = 20_000
+export const OPEN_FRESH_MS = 2_000
 
 const WS_CONNECTING = 0
 const WS_OPEN = 1
@@ -29,7 +29,7 @@ export function shouldReconnectOnResume(input: ResumeReconnectInput): ResumeReco
   }
 
   if (input.readyState === WS_OPEN && input.connectionState === 'open') {
-    return input.now - input.lastInboundAt >= OPEN_STALE_MS ? 'ping' : 'keep'
+    return input.now - input.lastInboundAt < OPEN_FRESH_MS ? 'keep' : 'ping'
   }
 
   if (input.connectionState === 'connecting' || input.readyState === WS_CONNECTING) {
@@ -37,6 +37,10 @@ export function shouldReconnectOnResume(input: ResumeReconnectInput): ResumeReco
   }
 
   return 'reconnect'
+}
+
+export function shouldDropSocketAfterPingFailure(_readyState: number | null = null) {
+  return true
 }
 
 export function shouldReplaceTranscriptOnRebind(status: string) {

@@ -1,3 +1,5 @@
+import { installIgnorableNetworkErrorGuard } from './shared/utils/networkErrors'
+
 export default defineNuxtConfig({
   modules: ['@nuxt/eslint', '@nuxt/icon'],
   devtools: {
@@ -43,6 +45,14 @@ export default defineNuxtConfig({
           loadPaths: ['app/assets/scss']
         }
       }
+    }
+  },
+  hooks: {
+    listen() {
+      installIgnorableNetworkErrorGuard()
+    },
+    ready() {
+      installIgnorableNetworkErrorGuard()
     }
   },
   eslint: {

@@ -36,6 +36,7 @@ export function isAbortError(error: unknown) {
 }
 
 export class JsonRpcGatewayClient {
+  private closeCode: number | null = null
   private connectingStartedAt = 0
   private heartbeatSequence = 0
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
@@ -63,16 +64,17 @@ export class JsonRpcGatewayClient {
     return this.socket?.readyState ?? null
   }
 
-  async connect(wsUrl: string): Promise<void> {
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      return
-    }
+  get lastCloseCode(): number | null {
+    return this.closeCode
+  }
 
-    if (this.state === 'connecting' && this.socket?.readyState === WebSocket.CONNECTING) {
+  async connect(wsUrl: string): Promise<void> {
+    if (this.socket?.readyState === WebSocket.OPEN && this.state === 'open') {
       return
     }
 
     this.dropSocket()
+    this.closeCode = null
     this.setState('connecting')
     this.connectingStartedAt = Date.now()
     const socket = new WebSocket(wsUrl)
@@ -87,15 +89,29 @@ export class JsonRpcGatewayClient {
       this.handleMessage(String(event.data))
     })
 
-    socket.addEventListener('close', () => {
+    socket.addEventListener('close', (event) => {
       if (this.socket !== socket) {
         return
       }
 
+      this.closeCode = event.code
       this.socket = null
       this.stopHeartbeat()
       this.setState('closed')
       this.rejectAll(new Error('WebSocket 已关闭'))
+    })
+
+    socket.addEventListener('error', () => {
+      if (this.socket !== socket) {
+        return
+      }
+
+      this.setState('error')
+      try {
+        socket.close()
+      } catch {
+        // already closing
+      }
     })
 
     await new Promise<void>((resolve, reject) => {

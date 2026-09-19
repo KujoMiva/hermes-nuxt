@@ -94,6 +94,10 @@ function formatProbeError(error: unknown): string {
   const code
     = cause && typeof cause === 'object' && 'code' in cause ? String((cause as { code?: unknown }).code || '') : ''
 
+  if (code === 'ECONNRESET' || code === 'EPIPE') {
+    return '网关连接已断开'
+  }
+
   if (code === 'ECONNREFUSED') {
     return '无法连接到该 Hermes 网关（连接被拒绝）'
   }

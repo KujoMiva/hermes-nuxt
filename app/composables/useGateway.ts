@@ -1,10 +1,13 @@
+import { GATEWAY_UNAUTHORIZED_CLOSE } from '#shared/utils/wsCloseCode'
 import {
   JsonRpcGatewayClient,
   type ConnectionState,
   type GatewayEvent
 } from '~/utils/gateway-client'
 import {
+  CONNECTING_STALE_MS,
   RESUME_RECONNECT_THROTTLE_MS,
+  shouldDropSocketAfterPingFailure,
   shouldReconnectOnResume
 } from '~/utils/gatewayReconnect'
 
@@ -47,9 +50,34 @@ export function useGateway() {
 
     if (!client) {
       client = new JsonRpcGatewayClient()
+      client.on('error', (event) => {
+        const payload = event.payload as { message?: unknown } | undefined
+        const message = typeof payload?.message === 'string' ? payload.message.trim() : ''
+        if (message) {
+          lastError.value = message
+        }
+      })
       client.onState((next) => {
         state.value = next
+        if (next === 'open') {
+          reconnectAttempt = 0
+          lastError.value = ''
+        }
         if ((next === 'closed' || next === 'error') && wantOpen && !quietClose) {
+          if (client?.lastCloseCode === GATEWAY_UNAUTHORIZED_CLOSE) {
+            void useSessionInfo().refresh().then((session) => {
+              if (!session.loggedIn) {
+                wantOpen = false
+                lastError.value = lastError.value || '未登录，或服务已重启，请重新连接网关'
+                return
+              }
+              wantOpen = true
+              scheduleReconnect()
+            }).catch(() => {
+              scheduleReconnect()
+            })
+            return
+          }
           scheduleReconnect()
         }
       })
@@ -94,7 +122,10 @@ export function useGateway() {
     }
 
     if (connecting) {
-      return connecting
+      if (Date.now() - gw.handshakeStartedAt < CONNECTING_STALE_MS) {
+        return connecting
+      }
+      dropTransport()
     }
 
     const generation = ++connectGeneration
@@ -175,7 +206,7 @@ export function useGateway() {
 
     if (action === 'ping') {
       void gw.request('gateway.ping', {}, 8_000).catch(() => {
-        if (gw.socketReadyState === WebSocket.OPEN) {
+        if (!shouldDropSocketAfterPingFailure(gw.socketReadyState)) {
           return
         }
         dropTransport()

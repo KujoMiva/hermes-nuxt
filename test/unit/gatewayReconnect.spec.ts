@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { shouldReconnectOnResume, shouldReplaceTranscriptOnRebind } from '~/utils/gatewayReconnect'
+import {
+  shouldDropSocketAfterPingFailure,
+  shouldReconnectOnResume,
+  shouldReplaceTranscriptOnRebind
+} from '~/utils/gatewayReconnect'
 
 const base = {
   connectingStartedAt: 0,
@@ -17,16 +21,25 @@ describe('shouldReconnectOnResume', () => {
     expect(shouldReconnectOnResume(base)).toBe('reconnect')
   })
 
-  it('keeps a fresh open socket', () => {
+  it('keeps a socket that just received traffic', () => {
+    expect(shouldReconnectOnResume({
+      ...base,
+      connectionState: 'open',
+      lastInboundAt: 29_500,
+      readyState: 1
+    })).toBe('keep')
+  })
+
+  it('pings an open socket after a short background freeze', () => {
     expect(shouldReconnectOnResume({
       ...base,
       connectionState: 'open',
       lastInboundAt: 25_000,
       readyState: 1
-    })).toBe('keep')
+    })).toBe('ping')
   })
 
-  it('pings an open socket that went silent, and does not tear it down', () => {
+  it('pings an open socket that went silent', () => {
     expect(shouldReconnectOnResume({
       ...base,
       connectionState: 'open',
@@ -67,6 +80,13 @@ describe('shouldReconnectOnResume', () => {
     expect(shouldReconnectOnResume({ ...base, hidden: true })).toBe('keep')
     expect(shouldReconnectOnResume({ ...base, online: false })).toBe('keep')
     expect(shouldReconnectOnResume({ ...base, wantOpen: false })).toBe('keep')
+  })
+})
+
+describe('shouldDropSocketAfterPingFailure', () => {
+  it('drops zombie sockets that still report OPEN', () => {
+    expect(shouldDropSocketAfterPingFailure(1)).toBe(true)
+    expect(shouldDropSocketAfterPingFailure(3)).toBe(true)
   })
 })
 
