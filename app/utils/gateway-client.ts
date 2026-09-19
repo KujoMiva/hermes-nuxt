@@ -36,9 +36,10 @@ export function isAbortError(error: unknown) {
 }
 
 export class JsonRpcGatewayClient {
+  private connectingStartedAt = 0
   private heartbeatSequence = 0
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
-  private lastInboundAt = 0
+  private inboundAt = 0
   private nextId = 0
   private readonly eventHandlers = new Map<string, Set<(event: GatewayEvent) => void>>()
   private readonly pending = new Map<string | number, PendingCall>()
@@ -50,12 +51,30 @@ export class JsonRpcGatewayClient {
     return this.state
   }
 
+  get lastInboundAt(): number {
+    return this.inboundAt
+  }
+
+  get handshakeStartedAt(): number {
+    return this.connectingStartedAt
+  }
+
+  get socketReadyState(): number | null {
+    return this.socket?.readyState ?? null
+  }
+
   async connect(wsUrl: string): Promise<void> {
-    if (this.socket?.readyState === WebSocket.OPEN || this.state === 'connecting') {
+    if (this.socket?.readyState === WebSocket.OPEN) {
       return
     }
 
+    if (this.state === 'connecting' && this.socket?.readyState === WebSocket.CONNECTING) {
+      return
+    }
+
+    this.dropSocket()
     this.setState('connecting')
+    this.connectingStartedAt = Date.now()
     const socket = new WebSocket(wsUrl)
     this.socket = socket
 
@@ -64,7 +83,7 @@ export class JsonRpcGatewayClient {
         return
       }
 
-      this.lastInboundAt = Date.now()
+      this.inboundAt = Date.now()
       this.handleMessage(String(event.data))
     })
 
@@ -81,42 +100,57 @@ export class JsonRpcGatewayClient {
 
     await new Promise<void>((resolve, reject) => {
       let settled = false
-      const timer = window.setTimeout(() => {
+      let timer = 0
+      const finish = (error?: Error) => {
         if (settled) {
           return
         }
 
         settled = true
-        this.setState('error')
-        socket.close()
-        reject(new Error('连接网关超时'))
+        window.clearTimeout(timer)
+        if (error) {
+          reject(error)
+        } else {
+          resolve()
+        }
+      }
+
+      timer = window.setTimeout(() => {
+        if (this.socket === socket) {
+          this.setState('error')
+          socket.close()
+        }
+        finish(new Error('连接网关超时'))
       }, 15_000)
 
       socket.addEventListener(
         'open',
         () => {
-          if (settled) {
+          if (this.socket !== socket) {
+            finish(new Error('WebSocket 已关闭'))
             return
           }
 
-          settled = true
-          window.clearTimeout(timer)
+          this.inboundAt = Date.now()
           this.setState('open')
-          resolve()
+          finish()
         },
         { once: true }
       )
       socket.addEventListener(
         'error',
         () => {
-          if (settled) {
-            return
+          if (this.socket === socket) {
+            this.setState('error')
           }
-
-          settled = true
-          window.clearTimeout(timer)
-          this.setState('error')
-          reject(new Error('WebSocket 连接失败'))
+          finish(new Error('WebSocket 连接失败'))
+        },
+        { once: true }
+      )
+      socket.addEventListener(
+        'close',
+        () => {
+          finish(new Error('WebSocket 已关闭'))
         },
         { once: true }
       )
@@ -124,19 +158,9 @@ export class JsonRpcGatewayClient {
   }
 
   close(): void {
-    const socket = this.socket
-
-    if (!socket) {
-      return
-    }
-
-    try {
-      socket.close()
-    } finally {
-      this.socket = null
-      this.stopHeartbeat()
+    this.dropSocket()
+    if (this.state !== 'closed') {
       this.setState('closed')
-      this.rejectAll(new Error('WebSocket 已关闭'))
     }
   }
 
@@ -224,6 +248,7 @@ export class JsonRpcGatewayClient {
         const payload = frame.params.payload as { heartbeat?: unknown } | undefined
 
         if (payload?.heartbeat === true && this.socket) {
+          this.inboundAt = Date.now()
           this.startHeartbeat(this.socket)
         }
       }
@@ -232,15 +257,36 @@ export class JsonRpcGatewayClient {
     }
   }
 
+  private dropSocket(): void {
+    const socket = this.socket
+    this.socket = null
+    this.stopHeartbeat()
+    this.rejectAll(new Error('WebSocket 已关闭'))
+
+    if (!socket) {
+      return
+    }
+
+    try {
+      socket.close()
+    } catch {
+      // already closing
+    }
+  }
+
   private startHeartbeat(socket: WebSocket): void {
     this.stopHeartbeat()
-    this.lastInboundAt = Date.now()
+    this.inboundAt = Date.now()
     this.heartbeatTimer = setInterval(() => {
       if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) {
         return
       }
 
-      if (Date.now() - this.lastInboundAt >= 45_000) {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return
+      }
+
+      if (Date.now() - this.inboundAt >= 45_000) {
         socket.close()
         return
       }

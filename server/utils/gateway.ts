@@ -1,6 +1,6 @@
 import type { AuthProvider, ProbeResult } from '#shared/types/gateway'
 import { buildGatewayWsUrl, normalizeRemoteBaseUrl } from '#shared/utils/remote-url'
-import type { GatewayConnection, NativeTokenSet } from './session'
+import { touchStoredConnection, type GatewayConnection, type NativeTokenSet } from './session'
 
 const STATUS_TIMEOUT_MS = 8_000
 const NATIVE_SKEW_SECONDS = 60
@@ -270,6 +270,7 @@ export async function refreshNativeTokens(connection: GatewayConnection): Promis
   }
 
   connection.native = parseNativeTokens(body)
+  touchStoredConnection(connection)
 }
 
 function nativeRefreshUrl(baseUrl: string): string {
@@ -307,6 +308,7 @@ export async function gatewayFetch(
   })
 
   applySetCookie(connection.cookies, response)
+  touchStoredConnection(connection)
   return response
 }
 

@@ -3,9 +3,17 @@ import {
   type ConnectionState,
   type GatewayEvent
 } from '~/utils/gateway-client'
+import {
+  RESUME_RECONNECT_THROTTLE_MS,
+  shouldReconnectOnResume
+} from '~/utils/gatewayReconnect'
 
 let client: JsonRpcGatewayClient | null = null
 let connecting: Promise<JsonRpcGatewayClient> | null = null
+let connectGeneration = 0
+let lastResumeAt = 0
+let lifecycleBound = false
+let quietClose = false
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempt = 0
 let wantOpen = false
@@ -13,6 +21,17 @@ let wantOpen = false
 function gatewayWsUrl() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${protocol}//${location.host}/gateway-ws`
+}
+
+function clearReconnectTimer() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+}
+
+function isOnline() {
+  return typeof navigator === 'undefined' || navigator.onLine !== false
 }
 
 export function useGateway() {
@@ -24,11 +43,13 @@ export function useGateway() {
       throw new Error('网关仅在浏览器中连接')
     }
 
+    bindLifecycle()
+
     if (!client) {
       client = new JsonRpcGatewayClient()
       client.onState((next) => {
         state.value = next
-        if (next === 'closed' && wantOpen) {
+        if ((next === 'closed' || next === 'error') && wantOpen && !quietClose) {
           scheduleReconnect()
         }
       })
@@ -46,10 +67,11 @@ export function useGateway() {
   }
 
   function scheduleReconnect() {
-    if (!import.meta.client || reconnectTimer || !wantOpen) {
+    if (!import.meta.client || !wantOpen) {
       return
     }
 
+    clearReconnectTimer()
     const delay = Math.min(15_000, 800 * (2 ** reconnectAttempt))
     reconnectAttempt += 1
     reconnectTimer = setTimeout(() => {
@@ -64,8 +86,9 @@ export function useGateway() {
     }
 
     wantOpen = true
+    bindLifecycle()
     const gw = getClient()
-    if (gw.connectionState === 'open') {
+    if (gw.connectionState === 'open' && gw.socketReadyState === WebSocket.OPEN) {
       reconnectAttempt = 0
       return gw
     }
@@ -74,18 +97,26 @@ export function useGateway() {
       return connecting
     }
 
+    const generation = ++connectGeneration
     connecting = gw.connect(gatewayWsUrl())
       .then(() => {
+        if (generation !== connectGeneration) {
+          return gw
+        }
         reconnectAttempt = 0
         lastError.value = ''
         return gw
       })
       .catch((error) => {
-        lastError.value = error instanceof Error ? error.message : String(error)
+        if (generation === connectGeneration) {
+          lastError.value = error instanceof Error ? error.message : String(error)
+        }
         throw error
       })
       .finally(() => {
-        connecting = null
+        if (generation === connectGeneration) {
+          connecting = null
+        }
       })
 
     return connecting
@@ -100,13 +131,85 @@ export function useGateway() {
     return getClient().on(type, handler)
   }
 
+  function dropTransport() {
+    quietClose = true
+    try {
+      client?.close()
+    } finally {
+      quietClose = false
+      connecting = null
+      connectGeneration += 1
+    }
+  }
+
+  async function resumeNow(event?: Event) {
+    if (!wantOpen) {
+      return
+    }
+
+    const now = Date.now()
+    if (now - lastResumeAt < RESUME_RECONNECT_THROTTLE_MS) {
+      return
+    }
+
+    const gw = getClient()
+    const action = shouldReconnectOnResume({
+      connectingStartedAt: gw.handshakeStartedAt,
+      connectionState: gw.connectionState,
+      hidden: document.visibilityState === 'hidden',
+      lastInboundAt: gw.lastInboundAt,
+      now,
+      online: isOnline(),
+      persistedPageShow: Boolean(event && 'persisted' in event && (event as PageTransitionEvent).persisted),
+      readyState: gw.socketReadyState,
+      wantOpen
+    })
+
+    if (action === 'keep') {
+      return
+    }
+
+    lastResumeAt = now
+    reconnectAttempt = 0
+    clearReconnectTimer()
+
+    if (action === 'ping') {
+      void gw.request('gateway.ping', {}, 5_000).catch(() => {
+        dropTransport()
+        void ensureConnected().catch(() => {})
+      })
+      return
+    }
+
+    dropTransport()
+    await ensureConnected().catch(() => {})
+  }
+
+  function bindLifecycle() {
+    if (!import.meta.client || lifecycleBound) {
+      return
+    }
+
+    lifecycleBound = true
+    const onResume = (event?: Event) => {
+      void resumeNow(event)
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        onResume()
+      }
+    })
+    window.addEventListener('pageshow', onResume)
+    window.addEventListener('focus', onResume)
+    window.addEventListener('online', onResume)
+    document.addEventListener('resume', onResume)
+  }
+
   function close() {
     wantOpen = false
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer)
-      reconnectTimer = null
-    }
-    client?.close()
+    clearReconnectTimer()
+    dropTransport()
     client = null
     connecting = null
     state.value = 'closed'
@@ -118,6 +221,7 @@ export function useGateway() {
     lastError,
     on,
     request,
+    resumeNow,
     state
   }
 }

@@ -512,6 +512,36 @@ export function useChatController() {
     return sessionId.value
   }
 
+  function applyResume(id: string, resumed: {
+    info?: { model?: string, provider?: string }
+    messages?: unknown[]
+    pending_approval?: ChatApproval
+    running?: boolean
+    session_id?: string
+    session_key?: string
+  }, replaceMessages: boolean) {
+    sessionId.value = resumed.session_id || id
+    storedSessionId.value = resumed.session_key || id
+    if (replaceMessages) {
+      revokeBlobImages(messages.value)
+      messages.value = mapHistoryMessages(resumed.messages || [])
+    }
+    if (resumed.info?.model) applySessionSelection(resumed.info.model, resumed.info.provider || '')
+    if (resumed.pending_approval) approval.value = resumed.pending_approval
+    if (resumed.running) {
+      status.value = 'streaming'
+      const last = messages.value.at(-1)
+      if (last?.role === 'assistant') {
+        assistantId.value = last.id
+        patchParts(last, markLastStreamPartLive(messageParts(last)), { streaming: true })
+      }
+    } else if (status.value === 'streaming' || status.value === 'submitted') {
+      messages.value = freezeInterruptedMessages(messages.value)
+      status.value = 'ready'
+      assistantId.value = ''
+    }
+  }
+
   async function loadSession(id: string) {
     const token = ++historyLoad
     sessionId.value = ''
@@ -537,19 +567,7 @@ export function useChatController() {
         pending_approval?: ChatApproval
       }>('session.resume', { session_id: id })
       if (token !== historyLoad) return
-      sessionId.value = resumed.session_id || id
-      storedSessionId.value = resumed.session_key || id
-      messages.value = mapHistoryMessages(resumed.messages || [])
-      if (resumed.info?.model) applySessionSelection(resumed.info.model, resumed.info.provider || '')
-      if (resumed.pending_approval) approval.value = resumed.pending_approval
-      if (resumed.running) {
-        status.value = 'streaming'
-        const last = messages.value.at(-1)
-        if (last?.role === 'assistant') {
-          assistantId.value = last.id
-          patchParts(last, markLastStreamPartLive(messageParts(last)), { streaming: true })
-        }
-      }
+      applyResume(id, resumed, true)
     } catch (error) {
       if (token !== historyLoad) return
       errorText.value = error instanceof Error ? error.message : '无法加载会话'
@@ -561,6 +579,29 @@ export function useChatController() {
   async function resumeIfActive(id: string) {
     if (sessionId.value === id || storedSessionId.value === id) return
     await loadSession(id)
+  }
+
+  async function rebindAfterReconnect() {
+    const id = storedSessionId.value
+    if (!id) return
+    const token = historyLoad
+    try {
+      const resumed = await gateway.request<{
+        session_id?: string
+        session_key?: string
+        messages?: unknown[]
+        running?: boolean
+        info?: { model?: string, provider?: string }
+        pending_approval?: ChatApproval
+      }>('session.resume', { session_id: id })
+      if (token !== historyLoad || storedSessionId.value !== id) return
+      errorText.value = ''
+      liveHint.value = ''
+      providerWait.value = ''
+      applyResume(id, resumed, true)
+    } catch {
+      // keep the on-screen transcript if the rebound RPC fails
+    }
   }
 
   async function attachImage(file: File, onProgress?: (progress: { percent: number, loaded: number, total: number }) => void) {
@@ -919,6 +960,7 @@ export function useChatController() {
     pendingApproval,
     pendingSteer,
     persistRuntimeOptions,
+    rebindAfterReconnect,
     resetLocal,
     resolveApproval,
     resumeIfActive,

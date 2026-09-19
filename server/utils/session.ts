@@ -1,6 +1,13 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { deleteCookie, getCookie, setCookie, type H3Event } from 'h3'
 import type { GatewayAuthMode } from '#shared/types/gateway'
+import {
+  parseSessionStore,
+  serializeSessionStore,
+  toGatewayConnection
+} from './session-store'
 
 export const SESSION_COOKIE = 'hermes-nuxt'
 
@@ -32,8 +39,10 @@ export interface PendingOauth {
   verifier: string
 }
 
-const connections = new Map<string, GatewayConnection>()
+const STORE_PATH = join(process.cwd(), '.data', 'hermes-sessions.json')
+const connections = loadConnections()
 const pendingOauth = new Map<string, PendingOauth>()
+let flushTimer: ReturnType<typeof setTimeout> | null = null
 
 function cookieOptions() {
   return {
@@ -42,6 +51,48 @@ function cookieOptions() {
     path: '/',
     sameSite: 'lax' as const
   }
+}
+
+function loadConnections() {
+  try {
+    const map = parseSessionStore(readFileSync(STORE_PATH, 'utf8'))
+    const live = new Map<string, GatewayConnection>()
+    for (const [id, row] of map) {
+      live.set(id, toGatewayConnection(row))
+    }
+    return live
+  } catch {
+    return new Map<string, GatewayConnection>()
+  }
+}
+
+function writeConnections() {
+  mkdirSync(dirname(STORE_PATH), { recursive: true })
+  writeFileSync(STORE_PATH, serializeSessionStore(connections), { encoding: 'utf8', mode: 0o600 })
+}
+
+function flushConnections(immediate = false) {
+  if (immediate) {
+    if (flushTimer) {
+      clearTimeout(flushTimer)
+      flushTimer = null
+    }
+    writeConnections()
+    return
+  }
+
+  if (flushTimer) {
+    return
+  }
+
+  flushTimer = setTimeout(() => {
+    flushTimer = null
+    try {
+      writeConnections()
+    } catch {
+      // disk is best-effort; the in-memory map still serves this process
+    }
+  }, 200)
 }
 
 export function readSessionId(event: H3Event): string | null {
@@ -82,11 +133,21 @@ export function persistConnection(event: H3Event, connection: GatewayConnection)
 
   if (!id) {
     id = randomUUID()
-    setCookie(event, SESSION_COOKIE, id, cookieOptions())
   }
 
+  setCookie(event, SESSION_COOKIE, id, cookieOptions())
   connections.set(id, connection)
+  flushConnections(true)
   return id
+}
+
+export function touchStoredConnection(connection: GatewayConnection) {
+  for (const row of connections.values()) {
+    if (row === connection) {
+      flushConnections()
+      return
+    }
+  }
 }
 
 export function clearConnection(event: H3Event): void {
@@ -94,6 +155,7 @@ export function clearConnection(event: H3Event): void {
 
   if (id) {
     connections.delete(id)
+    flushConnections(true)
   }
 
   deleteCookie(event, SESSION_COOKIE, { path: '/' })
