@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ChatToolEvent } from '~/types/hermes'
 import { formatShortDuration, prettyJson, subagentTitle, toolArgsLine } from '~/utils/format'
+import { fileEditPreview } from '~/utils/fileEditPreview'
 import { formatToolCall, isSubagentTool, toolContext, toolElapsedMs } from '~/utils/toolRun'
 import { toolRowIcon } from '~/utils/toolIcon'
 
@@ -8,8 +9,9 @@ const props = defineProps<{
   tool: ChatToolEvent
 }>()
 
+const preview = computed(() => fileEditPreview(props.tool))
 const now = useNowTick(() => props.tool.status === 'running')
-const open = ref(props.tool.status === 'running')
+const open = ref(props.tool.status === 'running' || Boolean(fileEditPreview(props.tool)))
 
 watch(() => props.tool.status, (status) => {
   if (status === 'running') open.value = true
@@ -17,17 +19,23 @@ watch(() => props.tool.status, (status) => {
 
 const title = computed(() => {
   if (isSubagentTool(props.tool)) return subagentTitle(props.tool)
+  if (preview.value) {
+    const fail = props.tool.status === 'failed' ? ' · 失败' : ''
+    return `${preview.value.basename}${fail}`
+  }
   return formatToolCall(props.tool.name, toolContext(props.tool))
 })
 
 const elapsed = computed(() => formatShortDuration(toolElapsedMs(props.tool, now.value)))
 const detail = computed(() => {
+  if (preview.value) return ''
   if (props.tool.inlineDiff?.trim()) return props.tool.inlineDiff.trim()
   if (props.tool.resultText?.trim()) return props.tool.resultText.trim()
   const args = prettyJson(props.tool.args).trim()
   if (args) return args
   return toolArgsLine(props.tool.args, props.tool.preview || props.tool.summary || props.tool.goal)
 })
+const showBody = computed(() => open.value && Boolean(preview.value || detail.value || (props.tool.childSessionId && props.tool.status !== 'running')))
 
 async function openChildSession() {
   const id = props.tool.childSessionId
@@ -39,12 +47,13 @@ async function openChildSession() {
 <template>
   <div
     class="tool-card"
-    :class="{ 'is-failed': tool.status === 'failed' }"
+    :class="{ 'is-failed': tool.status === 'failed', 'is-file': Boolean(preview) }"
     data-conversation-scaffold
+    :data-file-edit="preview ? '' : undefined"
   >
     <ChatScaffoldRow
       :open="open"
-      :toggleable="Boolean(detail)"
+      :toggleable="Boolean(preview || detail)"
       @toggle="open = !open"
     >
       <span
@@ -59,17 +68,32 @@ async function openChildSession() {
         {{ title }}
       </span>
       <template
-        v-if="elapsed"
+        v-if="(preview && (preview.added > 0 || preview.removed > 0)) || (!preview && elapsed)"
         #trailing
       >
-        {{ elapsed }}
+        <span
+          v-if="preview && preview.added > 0"
+          class="tool-card__stat is-add"
+        >+{{ preview.added }}</span>
+        <span
+          v-if="preview && preview.removed > 0"
+          class="tool-card__stat is-del"
+        >−{{ preview.removed }}</span>
+        <span
+          v-if="!preview && elapsed"
+          class="tool-card__elapsed"
+        >{{ elapsed }}</span>
       </template>
     </ChatScaffoldRow>
     <div
-      v-if="open && detail"
+      v-if="showBody"
       class="tool-card__body"
     >
-      <pre>{{ detail }}</pre>
+      <FileEditPanel
+        v-if="preview"
+        :preview="preview"
+      />
+      <pre v-else>{{ detail }}</pre>
       <button
         v-if="tool.childSessionId && tool.status !== 'running'"
         type="button"
@@ -108,8 +132,31 @@ async function openChildSession() {
   }
 }
 
+.tool-card__stat {
+  font-family: var(--font-mono);
+  font-weight: 600;
+
+  &.is-add {
+    color: var(--color-success);
+  }
+
+  &.is-del {
+    color: var(--color-error);
+  }
+}
+
+.tool-card__elapsed {
+  color: var(--color-text-dimmed);
+}
+
+.tool-card :deep(.scaffold-row__trailing) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .tool-card__body {
-  margin-top: 0.2rem;
+  margin-top: 0.35rem;
   min-width: 0;
 }
 

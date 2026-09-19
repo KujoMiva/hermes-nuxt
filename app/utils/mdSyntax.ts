@@ -50,14 +50,39 @@ const LANGS: Record<string, LangSpec> = {
 
 const ALIAS: Record<string, string> = {
   bash: 'sh',
+  cjs: 'ts',
   javascript: 'ts',
   js: 'ts',
   jsx: 'ts',
+  mjs: 'ts',
   python: 'py',
   rs: 'rust',
   shell: 'sh',
   tsx: 'ts',
   typescript: 'ts',
+  vue: 'ts',
+  yml: 'yaml',
+  zsh: 'sh'
+}
+
+const EXT_LANG: Record<string, string> = {
+  bash: 'sh',
+  cjs: 'js',
+  go: 'go',
+  js: 'js',
+  json: 'json',
+  jsonc: 'json',
+  jsx: 'jsx',
+  mjs: 'js',
+  py: 'python',
+  pyi: 'python',
+  rs: 'rust',
+  sh: 'sh',
+  sql: 'sql',
+  ts: 'ts',
+  tsx: 'tsx',
+  vue: 'ts',
+  yaml: 'yaml',
   yml: 'yaml',
   zsh: 'sh'
 }
@@ -70,6 +95,13 @@ function resolve(lang: string): LangSpec | null {
 
 export function isHighlightable(lang: string): boolean {
   return resolve(lang) !== null
+}
+
+export function languageFromFilename(path: string): string {
+  const name = path.replace(/\\/g, '/').split('/').pop() || ''
+  const dot = name.lastIndexOf('.')
+  if (dot <= 0) return ''
+  return EXT_LANG[name.slice(dot + 1).toLowerCase()] || ''
 }
 
 export function highlightTokens(line: string, lang: string): Array<[string, string]> {

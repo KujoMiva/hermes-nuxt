@@ -219,6 +219,14 @@ describe('chatBubbleMemo', () => {
       ...base,
       tools: [tool({ id: 't1', name: 'bash', preview: 'ls' })]
     })).not.toEqual(idle)
+    const writing = chatBubbleMemo({
+      ...base,
+      tools: [tool({ id: 'w1', name: 'write_file', args: { path: 'a.py', content: 'a' } })]
+    })
+    expect(chatBubbleMemo({
+      ...base,
+      tools: [tool({ id: 'w1', name: 'write_file', args: { path: 'a.py', content: 'ab' } })]
+    })).not.toEqual(writing)
   })
 })
 

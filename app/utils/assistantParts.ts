@@ -404,11 +404,32 @@ export function assistantBlocks(message: ChatThreadMessage): AssistantTimelineBl
   return blocks
 }
 
+function toolArgsMemo(args: unknown) {
+  if (args == null) return ''
+  if (typeof args === 'string') return `${args.length}:${args.slice(-48)}`
+  if (typeof args !== 'object') return String(args)
+  const record = args as Record<string, unknown>
+  for (const key of ['content', 'contents', 'new_content', 'new_text']) {
+    const value = record[key]
+    if (typeof value === 'string') return `${value.length}:${value.slice(-48)}`
+  }
+  try {
+    const raw = JSON.stringify(args)
+    return `${raw.length}:${raw.slice(-48)}`
+  } catch {
+    return ''
+  }
+}
+
+export function toolMemoKey(tool: ChatToolEvent) {
+  return `${tool.id}:${tool.status}:${tool.kind || ''}:${tool.preview || ''}:${tool.summary || ''}:${tool.inlineDiff || ''}:${toolArgsMemo(tool.args)}`
+}
+
 export function partsKey(parts?: ChatMessagePart[]) {
   if (!parts?.length) return ''
   return parts.map((part) => {
     if (part.type === 'text') return `t:${part.live ? 1 : 0}:${part.text}`
     if (part.type === 'reasoning') return `r:${part.live ? 1 : 0}:${part.text}`
-    return `k:${part.tool.id}:${part.tool.status}:${part.tool.preview || ''}:${part.tool.summary || ''}`
+    return `k:${toolMemoKey(part.tool)}`
   }).join('\n')
 }

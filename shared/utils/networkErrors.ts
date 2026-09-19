@@ -8,7 +8,7 @@ const IGNORABLE_CODES = new Set([
 
 const IGNORABLE_MESSAGE = /ECONNRESET|EPIPE|ECONNABORTED|premature close/i
 
-export function isIgnorableNetworkError(error: unknown) {
+export function isIgnorableNetworkError(error: unknown): boolean {
   if (error == null) {
     return false
   }

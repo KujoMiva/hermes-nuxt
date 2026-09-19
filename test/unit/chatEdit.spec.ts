@@ -84,11 +84,11 @@ describe('isSessionBusyError', () => {
 describe('resolveDurableRowId', () => {
   it('matches a cleaned caption against persisted @image lines', async () => {
     const path = String.raw`C:\Users\me\hermes\images\upload_1.jpg`
-    const request = async () => ({
+    const request = async <T = unknown>(_method: string, _params?: Record<string, unknown>) => ({
       messages: [
         { role: 'user', row_id: 12, text: `测试一下识图\n@image:\`${path}\`` }
       ]
-    })
+    }) as T
     expect(await resolveDurableRowId(request, 's1', '测试一下识图')).toBe(12)
   })
 })

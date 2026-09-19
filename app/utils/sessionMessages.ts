@@ -3,6 +3,7 @@ import {
   mergePartLists,
   messageParts,
   partsKey,
+  toolMemoKey,
   withParts
 } from './assistantParts'
 import { asRowId } from './chatEdit'
@@ -216,7 +217,7 @@ export function chatBubbleMemo(message: ChatThreadMessage) {
   let toolKey = ''
   if (tools?.length) {
     for (const tool of tools) {
-      toolKey += `${tool.id}\0${tool.status}\0${tool.kind || ''}\0${tool.preview || ''}\0${tool.summary || ''}\0${tool.goal || ''}\0${tool.endedAt || ''}\n`
+      toolKey += `${toolMemoKey(tool)}\n`
     }
   }
   return [
