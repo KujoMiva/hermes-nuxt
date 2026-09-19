@@ -6,10 +6,13 @@ const pending = usePendingPrompt()
 const { inset: keyboardInset, sync: syncVisualViewport } = useVisualViewport()
 const viewport = ref<HTMLElement | null>(null)
 const threadEl = ref<HTMLElement | null>(null)
+const composerEl = ref<HTMLElement | null>(null)
+const composerOffset = ref(0)
 const stickToBottom = ref(true)
 
 let ignoreScroll = false
 let resizeObserver: ResizeObserver | null = null
+let composerObserver: ResizeObserver | null = null
 
 function scrollToBottom() {
   const el = viewport.value
@@ -46,8 +49,25 @@ function bindThreadObserver(el: HTMLElement | null) {
   resizeObserver.observe(el)
 }
 
+function bindComposerObserver(el: HTMLElement | null) {
+  composerObserver?.disconnect()
+  composerObserver = null
+  if (!el || typeof ResizeObserver === 'undefined') return
+  const update = () => {
+    composerOffset.value = Math.ceil(el.getBoundingClientRect().height)
+    if (stickToBottom.value) scrollToBottom()
+  }
+  composerObserver = new ResizeObserver(update)
+  composerObserver.observe(el)
+  update()
+}
+
 watch(threadEl, (el) => {
   bindThreadObserver(el)
+})
+
+watch(composerEl, (el) => {
+  bindComposerObserver(el)
 })
 
 watch(() => chat.loadingHistory.value, (loading) => {
@@ -78,6 +98,10 @@ watch(keyboardInset, () => {
   if (stickToBottom.value) scrollToBottom()
 })
 
+watch(() => chat.approval.value?.request_id || chat.approval.value, () => {
+  void followBottom(true)
+})
+
 function onComposerFocusIn() {
   syncVisualViewport()
   void followBottom(true)
@@ -102,13 +126,18 @@ onMounted(() => {
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   resizeObserver = null
+  composerObserver?.disconnect()
+  composerObserver = null
 })
 </script>
 
 <template>
   <div
     class="chat-pane"
-    :style="{ '--keyboard-inset': `${keyboardInset}px` }"
+    :style="{
+      '--keyboard-inset': `${keyboardInset}px`,
+      '--composer-offset': `${composerOffset || 152}px`
+    }"
   >
     <div
       ref="viewport"
@@ -169,6 +198,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div
+      ref="composerEl"
       class="chat-pane__composer"
       @focusin="onComposerFocusIn"
     >
@@ -244,7 +274,7 @@ onBeforeUnmount(() => {
   width: 100%;
   max-width: 48rem;
   margin: 0 auto;
-  padding: 1.5rem 0 9.5rem;
+  padding: 1.5rem 0 calc(var(--composer-offset, 9.5rem) + 0.5rem);
   display: flex;
   flex-direction: column;
   gap: 1.25rem;

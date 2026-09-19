@@ -438,8 +438,12 @@ const choiceLabel: Record<string, string> = {
 }
 
 .composer__approval {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 22%, var(--color-border));
   border-radius: 1.25rem;
-  background: var(--color-warning-bg);
+  background: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
+  box-shadow: var(--shadow-composer);
   padding: 0.75rem;
   pointer-events: auto;
 }
@@ -448,15 +452,22 @@ const choiceLabel: Record<string, string> = {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  color: var(--color-text-strong);
   font-size: 0.875rem;
   font-weight: 500;
 }
 
 .composer__approval-body {
   margin: 0.5rem 0 0;
+  max-height: 8.5rem;
+  overflow-x: hidden;
+  overflow-y: auto;
   color: var(--color-text-muted);
+  font-family: var(--font-mono);
   font-size: 0.75rem;
+  line-height: 1.45;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .composer__queued {
