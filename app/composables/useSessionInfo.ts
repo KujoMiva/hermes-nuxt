@@ -1,4 +1,5 @@
 import type { PublicSession } from '#shared/types/gateway'
+import { writeCachedGatewayUrl } from '~/utils/gatewayUrlCache'
 
 export function useSessionInfo() {
   const session = useState<PublicSession>('hermes-session', () => ({ loggedIn: false }))
@@ -6,6 +7,9 @@ export function useSessionInfo() {
 
   async function refresh() {
     session.value = await requestFetch<PublicSession>('/api/session')
+    if (session.value.loggedIn && session.value.baseUrl) {
+      writeCachedGatewayUrl(session.value.baseUrl)
+    }
     return session.value
   }
 

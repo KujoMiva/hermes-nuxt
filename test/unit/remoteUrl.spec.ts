@@ -3,7 +3,9 @@ import {
   buildGatewayWsUrl,
   coerceRemoteUrlScheme,
   gatewayHostLabel,
-  normalizeRemoteBaseUrl
+  joinRemoteUrl,
+  normalizeRemoteBaseUrl,
+  splitRemoteUrl
 } from '#shared/utils/remote-url'
 
 describe('coerceRemoteUrlScheme', () => {
@@ -11,6 +13,33 @@ describe('coerceRemoteUrlScheme', () => {
     expect(coerceRemoteUrlScheme('127.0.0.1:9119')).toBe('http://127.0.0.1:9119')
     expect(coerceRemoteUrlScheme('https://gw.example/p')).toBe('https://gw.example/p')
     expect(coerceRemoteUrlScheme('  ')).toBe('')
+  })
+})
+
+describe('splitRemoteUrl', () => {
+  it('reads http and https from a full url', () => {
+    expect(splitRemoteUrl('https://gw.example/p')).toEqual({ host: 'gw.example/p', scheme: 'https' })
+    expect(splitRemoteUrl('HTTP://127.0.0.1:9119')).toEqual({ host: '127.0.0.1:9119', scheme: 'http' })
+  })
+
+  it('defaults to http when the scheme is missing', () => {
+    expect(splitRemoteUrl('127.0.0.1:9119')).toEqual({ host: '127.0.0.1:9119', scheme: 'http' })
+    expect(splitRemoteUrl('  ')).toEqual({ host: '', scheme: 'http' })
+  })
+})
+
+describe('joinRemoteUrl', () => {
+  it('combines the selected scheme with a host', () => {
+    expect(joinRemoteUrl('https', 'gw.example/p')).toBe('https://gw.example/p')
+    expect(joinRemoteUrl('http', ' 127.0.0.1:9119 ')).toBe('http://127.0.0.1:9119')
+  })
+
+  it('prefers a scheme pasted into the host field', () => {
+    expect(joinRemoteUrl('http', 'https://gw.example')).toBe('https://gw.example')
+  })
+
+  it('returns empty when the host is blank', () => {
+    expect(joinRemoteUrl('https', '  ')).toBe('')
   })
 })
 

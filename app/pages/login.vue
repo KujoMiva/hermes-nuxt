@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ProbeResult, PublicSession } from '#shared/types/gateway'
-import { coerceRemoteUrlScheme } from '#shared/utils/remote-url'
+import { joinRemoteUrl, splitRemoteUrl, type RemoteUrlScheme } from '#shared/utils/remote-url'
+import { readCachedGatewayUrl, writeCachedGatewayUrl } from '~/utils/gatewayUrlCache'
 import { safeInternalPath } from '~/utils/nav'
 
 definePageMeta({
@@ -10,7 +11,8 @@ definePageMeta({
 const { session } = useSessionInfo()
 const route = useRoute()
 
-const remoteUrl = ref('')
+const urlScheme = ref<RemoteUrlScheme>('http')
+const remoteHost = ref('')
 const username = ref('')
 const password = ref('')
 const token = ref('')
@@ -22,7 +24,24 @@ const submitting = ref(false)
 const error = ref(String(route.query.error || ''))
 let probeSeq = 0
 
-const trimmedUrl = computed(() => coerceRemoteUrlScheme(remoteUrl.value))
+const schemeItems = [
+  { label: 'http://', value: 'http' },
+  { label: 'https://', value: 'https' }
+]
+
+const remoteHostModel = computed({
+  get: () => remoteHost.value,
+  set: (value: string) => {
+    const trimmed = value.trim()
+    if (/^https?:\/\//i.test(trimmed)) {
+      applyGatewayUrl(trimmed)
+      return
+    }
+    remoteHost.value = value
+  }
+})
+
+const trimmedUrl = computed(() => joinRemoteUrl(urlScheme.value, remoteHost.value))
 const loginKind = computed(() => {
   if (!probe.value || probe.value.authMode === 'unknown') {
     return null
@@ -60,7 +79,7 @@ const urlHint = computed(() => {
   if (probeStatus.value === 'done' && probe.value) {
     return `已到达 ${probe.value.baseUrl}${probe.value.version ? ` · ${probe.value.version}` : ''}`
   }
-  return '支持无协议的 host:port，会自动补上 http://。路径前缀例如 /hermes 也可以。'
+  return '填写 host:port，路径前缀例如 /hermes 也可以。'
 })
 
 const alertText = computed(() => {
@@ -126,6 +145,7 @@ async function submitPassword() {
         username: username.value
       }
     })
+    rememberGatewayUrl(session.value.baseUrl || probe.value.baseUrl)
     await navigateTo(safeInternalPath(route.query.redirect), { replace: true })
   } catch (caught) {
     error.value = fetchErrorMessage(caught)
@@ -150,6 +170,7 @@ async function submitToken() {
         url: probe.value.baseUrl
       }
     })
+    rememberGatewayUrl(session.value.baseUrl || probe.value.baseUrl)
     await navigateTo(safeInternalPath(route.query.redirect), { replace: true })
   } catch (caught) {
     error.value = fetchErrorMessage(caught)
@@ -165,6 +186,37 @@ function startOauth() {
 
   window.location.href = `/api/oauth/start?url=${encodeURIComponent(probe.value.baseUrl)}`
 }
+
+function rememberGatewayUrl(url: string | undefined) {
+  if (url) {
+    writeCachedGatewayUrl(url)
+  }
+}
+
+function onSchemeChange(value: string) {
+  if (value === 'http' || value === 'https') {
+    urlScheme.value = value
+  }
+}
+
+function applyGatewayUrl(raw: string) {
+  const parsed = splitRemoteUrl(raw)
+  urlScheme.value = parsed.scheme
+  remoteHost.value = parsed.host
+  void nextTick(() => {
+    const el = document.querySelector<HTMLInputElement>('input[name="hermes-url"]')
+    if (el && el.value !== parsed.host) {
+      el.value = parsed.host
+    }
+  })
+}
+
+onMounted(() => {
+  const cached = readCachedGatewayUrl()
+  if (cached) {
+    applyGatewayUrl(cached)
+  }
+})
 
 function fetchErrorMessage(caught: unknown): string {
   const record = caught as {
@@ -200,13 +252,22 @@ function fetchErrorMessage(caught: unknown): string {
             label="网关 URL"
             :hint="urlHint"
           >
-            <UiInput
-              v-model="remoteUrl"
-              placeholder="http://127.0.0.1:9119"
-              autocomplete="url"
-              name="hermes-url"
-              spellcheck="false"
-            />
+            <div class="login__url">
+              <UiSelect
+                :model-value="urlScheme"
+                :items="schemeItems"
+                aria-label="协议"
+                name="hermes-url-scheme"
+                @update:model-value="onSchemeChange"
+              />
+              <UiInput
+                v-model="remoteHostModel"
+                placeholder="127.0.0.1:9119"
+                autocomplete="url"
+                name="hermes-url"
+                spellcheck="false"
+              />
+            </div>
           </UiFormField>
 
           <template v-if="loginKind === 'password'">
@@ -373,6 +434,49 @@ function fetchErrorMessage(caught: unknown): string {
     min-width: 1.75rem;
     min-height: 1.75rem;
     flex-shrink: 0;
+  }
+}
+
+.login__url {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+
+  &:focus-within {
+    border-color: var(--color-inverted);
+  }
+
+  :deep(.ui-select) {
+    width: auto;
+    min-width: 6.75rem;
+    flex: 0 0 auto;
+    min-height: 2.5rem;
+    border: 0;
+    border-right: 1px solid var(--color-border);
+    border-radius: 0;
+    appearance: none;
+    background-color: var(--color-bg);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237d899c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 0.9rem;
+    padding: 0 1.55rem 0 0.75rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  :deep(.ui-input-wrap) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  :deep(.ui-input-wrap--plain .ui-input) {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
 }
 

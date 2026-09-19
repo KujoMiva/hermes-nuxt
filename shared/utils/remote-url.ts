@@ -1,3 +1,5 @@
+export type RemoteUrlScheme = 'http' | 'https'
+
 /** Mirror of hermes-agent/apps/desktop/src/lib/remote-url.ts */
 export function coerceRemoteUrlScheme(rawUrl: string): string {
   const value = String(rawUrl || '').trim()
@@ -7,6 +9,35 @@ export function coerceRemoteUrlScheme(rawUrl: string): string {
   }
 
   return `http://${value}`
+}
+
+export function splitRemoteUrl(rawUrl: string): { host: string, scheme: RemoteUrlScheme } {
+  const value = String(rawUrl || '').trim()
+  const match = value.match(/^(https?):\/\/(.*)$/i)
+
+  const scheme = match?.[1]?.toLowerCase()
+  const host = match?.[2]
+
+  if ((scheme === 'http' || scheme === 'https') && host !== undefined) {
+    return { host, scheme }
+  }
+
+  return { host: value, scheme: 'http' }
+}
+
+export function joinRemoteUrl(scheme: RemoteUrlScheme, host: string): string {
+  const value = String(host || '').trim()
+
+  if (!value) {
+    return ''
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    const parsed = splitRemoteUrl(value)
+    return `${parsed.scheme}://${parsed.host}`
+  }
+
+  return `${scheme}://${value}`
 }
 
 /** Mirror of hermes-agent/apps/desktop/electron/connection-config.ts normalizeRemoteBaseUrl */
