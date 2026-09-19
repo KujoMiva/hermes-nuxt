@@ -2,8 +2,10 @@ import { GATEWAY_UNAUTHORIZED_CLOSE } from '#shared/utils/wsCloseCode'
 import {
   JsonRpcGatewayClient,
   type ConnectionState,
-  type GatewayEvent
+  type GatewayEvent,
+  type GatewayServerRequest
 } from '~/utils/gateway-client'
+import type { JsonRpcId } from '~/utils/jsonRpc'
 import {
   CONNECTING_STALE_MS,
   RESUME_RECONNECT_THROTTLE_MS,
@@ -174,6 +176,26 @@ export function useGateway() {
     return getClient().on(type, handler)
   }
 
+  function onRequest(handler: (request: GatewayServerRequest) => boolean) {
+    return getClient().onRequest(handler)
+  }
+
+  function acceptRequest(id: JsonRpcId) {
+    getClient().acceptRequest(id)
+  }
+
+  function forgetRequest(id: JsonRpcId) {
+    return getClient().forgetRequest(id)
+  }
+
+  function respond(id: JsonRpcId, result: unknown) {
+    return getClient().respond(id, result)
+  }
+
+  function respondError(id: JsonRpcId, message: string, code?: number) {
+    return getClient().respondError(id, message, code)
+  }
+
   function dropTransport() {
     quietClose = true
     try {
@@ -261,11 +283,16 @@ export function useGateway() {
   }
 
   return {
+    acceptRequest,
     close,
+    forgetRequest,
     ensureConnected,
     lastError,
     on,
+    onRequest,
     request,
+    respond,
+    respondError,
     resumeNow,
     state
   }

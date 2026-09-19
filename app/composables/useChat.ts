@@ -1,4 +1,4 @@
-import type { ChatApproval, ChatStatus, ChatStopKind, ChatThreadMessage, ChatToolEvent, ReasoningEffort, SessionRuntimeInfo } from '~/types/hermes'
+import type { ChatApproval, ChatClarify, ChatStatus, ChatStopKind, ChatSudo, ChatThreadMessage, ChatToolEvent, ReasoningEffort, SessionRuntimeInfo } from '~/types/hermes'
 import {
   appendStreamPart,
   appendToolPart,
@@ -24,7 +24,8 @@ import {
   visibleUserOrdinal
 } from '~/utils/chatEdit'
 import { chatUid, sleep } from '~/utils/chatRun'
-import { shouldReplaceTranscriptOnRebind } from '~/utils/gatewayReconnect'
+import { asJsonRpcParams } from '~/utils/jsonRpc'
+import { applyOpenPrompt, parseApprovalRequest, parseClarifyRequest, parseSudoRequest, type GatewayOpenRequest } from '~/utils/serverPrompt'
 import { isGenericModel } from '~/composables/useModelCatalog'
 import { isBusySessionModelSwitch, sessionModelSetValue } from '~/utils/modelSettings'
 import { asSessionReasoningEffort } from '~/utils/reasoning'
@@ -212,8 +213,12 @@ export function useChatController() {
   const status = useState<ChatStatus>('hermes-chat-status', () => 'ready')
   const errorText = useState('hermes-chat-error', () => '')
   const approval = useState<ChatApproval | null>('hermes-approval', () => null)
+  const clarify = useState<ChatClarify | null>('hermes-clarify', () => null)
+  const sudo = useState<ChatSudo | null>('hermes-sudo', () => null)
   const pendingSteer = useState('hermes-pending-steer', () => '')
   const pendingApproval = useState<ChatApproval | null>('hermes-pending-approval', () => null)
+  const pendingClarify = useState<ChatClarify | null>('hermes-pending-clarify', () => null)
+  const pendingSudo = useState<ChatSudo | null>('hermes-pending-sudo', () => null)
   const loadingHistory = useState('hermes-history-loading', () => false)
   const liveHint = useState('hermes-live-hint', () => '')
   const providerWait = useState('hermes-provider-wait', () => '')
@@ -296,6 +301,39 @@ export function useChatController() {
   function sameSession(eventSession?: string) {
     if (!eventSession || !sessionId.value) return true
     return eventSession === sessionId.value || eventSession === storedSessionId.value
+  }
+
+  function requestSessionId(params: unknown) {
+    const session = asJsonRpcParams(params).session_id
+    return typeof session === 'string' ? session : ''
+  }
+
+  function samePromptSession(params: unknown) {
+    return sameSession(requestSessionId(params) || undefined)
+  }
+
+  function promptHandlers() {
+    return {
+      approval: (value: ChatApproval) => {
+        approval.value = { ...approval.value, ...value }
+      },
+      clarify: (value: ChatClarify) => {
+        clarify.value = value
+      },
+      sudo: (value: ChatSudo) => {
+        sudo.value = value
+      }
+    }
+  }
+
+  function applyOpenRequests(rows?: GatewayOpenRequest[]) {
+    if (!Array.isArray(rows)) return
+    clarify.value = null
+    sudo.value = null
+    for (const entry of rows) {
+      if (entry.id != null) gateway.acceptRequest(entry.id)
+      applyOpenPrompt(entry, promptHandlers())
+    }
   }
 
   function isActiveId(id?: string | null) {
@@ -542,7 +580,40 @@ export function useChatController() {
 
     gateway.on<ChatApproval>('approval.request', (event) => {
       if (!sameSession(event.session_id)) return
-      approval.value = event.payload || null
+      approval.value = { ...approval.value, ...event.payload }
+    })
+
+    gateway.on<{ id?: string | number, method?: string }>('request.cancel', (event) => {
+      const id = event.payload?.id
+      const method = event.payload?.method
+      if (id == null) return
+      if (method === 'clarify' && String(clarify.value?.requestId) === String(id)) clarify.value = null
+      if (method === 'sudo' && String(sudo.value?.requestId) === String(id)) sudo.value = null
+      if (method === 'approval' && (
+        String(approval.value?.server_request_id) === String(id)
+        || approval.value?.request_id === id
+      )) {
+        approval.value = null
+      }
+    })
+
+    gateway.onRequest((request) => {
+      if (!samePromptSession(request.params)) return false
+      if (request.method === 'clarify') {
+        const parsed = parseClarifyRequest(request.id, request.params)
+        if (!parsed) return false
+        clarify.value = parsed
+        return true
+      }
+      if (request.method === 'sudo') {
+        sudo.value = parseSudoRequest(request.id, request.params)
+        return true
+      }
+      if (request.method === 'approval') {
+        approval.value = { ...approval.value, ...parseApprovalRequest(request.id, request.params) }
+        return true
+      }
+      return false
     })
 
     gateway.on<{ session_id?: string, title?: string }>('session.title', (event) => {
@@ -580,6 +651,7 @@ export function useChatController() {
   function applyResume(id: string, resumed: {
     info?: SessionRuntimeInfo
     messages?: unknown[]
+    open_requests?: GatewayOpenRequest[]
     pending_approval?: ChatApproval
     running?: boolean
     session_id?: string
@@ -594,7 +666,8 @@ export function useChatController() {
     }
     applySessionRuntime(resumed.info)
     void hydrateReasoningFromConfig()
-    if (resumed.pending_approval) approval.value = resumed.pending_approval
+    if (resumed.pending_approval) approval.value = { ...approval.value, ...resumed.pending_approval }
+    applyOpenRequests(resumed.open_requests)
     if (resumed.running) {
       status.value = 'streaming'
       const last = messages.value.at(-1)
@@ -619,6 +692,8 @@ export function useChatController() {
     revokeBlobImages(messages.value)
     messages.value = []
     approval.value = null
+    clarify.value = null
+    sudo.value = null
     pendingSteer.value = ''
     errorText.value = ''
     liveHint.value = ''
@@ -635,6 +710,7 @@ export function useChatController() {
         running?: boolean
         info?: SessionRuntimeInfo
         pending_approval?: ChatApproval
+        open_requests?: GatewayOpenRequest[]
       }>('session.resume', { session_id: id })
       if (token !== historyLoad) return
       applyResume(id, resumed, true)
@@ -664,6 +740,7 @@ export function useChatController() {
         running?: boolean
         info?: SessionRuntimeInfo
         pending_approval?: ChatApproval
+        open_requests?: GatewayOpenRequest[]
       }>('session.resume', { session_id: id })
       if (token !== historyLoad || storedSessionId.value !== id) return
       errorText.value = ''
@@ -924,6 +1001,11 @@ export function useChatController() {
     if (!sid || !approval.value) return
     pendingApproval.value = approval.value
     try {
+      const serverId = approval.value.server_request_id
+      if (serverId != null && gateway.respond(serverId, { choice })) {
+        approval.value = null
+        return
+      }
       await gateway.request('approval.respond', {
         session_id: sid,
         choice,
@@ -938,6 +1020,73 @@ export function useChatController() {
       })
     } finally {
       pendingApproval.value = null
+    }
+  }
+
+  async function resolveClarify(result: { answer?: string, answers?: Record<string, string> } = {}) {
+    const req = clarify.value
+    if (!req) return
+    pendingClarify.value = req
+    try {
+      if (!gateway.respond(req.requestId, result)) {
+        throw new Error('这条提问已经失效')
+      }
+      clarify.value = null
+    } catch (error) {
+      toast.add({
+        title: '无法提交选择',
+        description: error instanceof Error ? error.message : String(error),
+        color: 'error'
+      })
+    } finally {
+      pendingClarify.value = null
+    }
+  }
+
+  async function lockClarify(answers: Record<string, string>) {
+    const req = clarify.value
+    const questions = req?.questions
+    if (!req || !questions?.length) return
+    pendingClarify.value = req
+    try {
+      for (const question of questions) {
+        const locked = await gateway.request<{ remaining?: string[] | null, status?: string }>('clarify.lock', {
+          request_id: String(req.requestId),
+          question_id: question.qid,
+          answer: answers[question.qid] ?? ''
+        })
+        if (locked.status === 'expired') break
+      }
+      gateway.forgetRequest(req.requestId)
+      clarify.value = null
+    } catch (error) {
+      toast.add({
+        title: '无法提交选择',
+        description: error instanceof Error ? error.message : String(error),
+        color: 'error'
+      })
+    } finally {
+      pendingClarify.value = null
+    }
+  }
+
+  async function resolveSudo(value: string) {
+    const req = sudo.value
+    if (!req) return
+    pendingSudo.value = req
+    try {
+      if (!gateway.respond(req.requestId, { value })) {
+        throw new Error('这条命令提问已经失效')
+      }
+      sudo.value = null
+    } catch (error) {
+      toast.add({
+        title: '无法提交密码',
+        description: error instanceof Error ? error.message : String(error),
+        color: 'error'
+      })
+    } finally {
+      pendingSudo.value = null
     }
   }
 
@@ -1022,6 +1171,8 @@ export function useChatController() {
     revokeBlobImages(messages.value)
     messages.value = []
     approval.value = null
+    clarify.value = null
+    sudo.value = null
     pendingSteer.value = ''
     errorText.value = ''
     liveHint.value = ''
@@ -1042,6 +1193,7 @@ export function useChatController() {
     attachImage,
     branchFromMessage,
     busy,
+    clarify,
     clearPendingSteer,
     editMessage,
     errorText,
@@ -1053,11 +1205,16 @@ export function useChatController() {
     loadingHistory,
     messages: thread,
     pendingApproval,
+    pendingClarify,
     pendingSteer,
+    pendingSudo,
     persistRuntimeOptions,
     rebindAfterReconnect,
     resetLocal,
+    lockClarify,
     resolveApproval,
+    resolveClarify,
+    resolveSudo,
     resumeIfActive,
     send,
     sessionId,
@@ -1070,6 +1227,7 @@ export function useChatController() {
     steer,
     stop,
     stopping,
-    storedSessionId
+    storedSessionId,
+    sudo
   }
 }

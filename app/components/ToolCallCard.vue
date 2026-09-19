@@ -45,7 +45,12 @@ async function openChildSession() {
 </script>
 
 <template>
+  <ChatClarifyCard
+    v-if="tool.name === 'clarify' && tool.status !== 'running'"
+    :tool="tool"
+  />
   <div
+    v-else-if="tool.name !== 'clarify'"
     class="tool-card"
     :class="{ 'is-failed': tool.status === 'failed', 'is-file': Boolean(preview) }"
     data-conversation-scaffold

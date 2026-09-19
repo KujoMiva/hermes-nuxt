@@ -203,13 +203,6 @@ async function unqueueSteer() {
     syncTextareaHeight()
   }
 }
-
-const choiceLabel: Record<string, string> = {
-  once: '允许一次',
-  session: '本会话允许',
-  always: '始终允许',
-  deny: '拒绝'
-}
 </script>
 
 <template>
@@ -221,36 +214,6 @@ const choiceLabel: Record<string, string> = {
     @dragleave="dragging = false"
     @drop="onDrop"
   >
-    <div
-      v-if="chat.approval.value"
-      class="composer__approval"
-    >
-      <div class="composer__approval-title">
-        <UiIcon
-          name="i-lucide-shield-alert"
-          :size="16"
-        />
-        需要你确认一次工具调用
-      </div>
-      <p class="composer__approval-body">
-        {{ chat.approval.value.command || chat.approval.value.tool_name || '危险操作等待审批' }}
-      </p>
-      <div class="composer__row">
-        <UiButton
-          v-for="choice in (chat.approval.value.choices || ['once', 'deny'])"
-          :key="choice"
-          size="xs"
-          :color="choice === 'deny' ? 'error' : 'primary'"
-          :variant="choice === 'deny' ? 'outline' : 'solid'"
-          :disabled="Boolean(chat.pendingApproval.value)"
-          :loading="Boolean(chat.pendingApproval.value)"
-          @click="chat.resolveApproval(choice)"
-        >
-          {{ choiceLabel[choice] || choice }}
-        </UiButton>
-      </div>
-    </div>
-
     <div
       v-if="chat.pendingSteer.value"
       class="composer__queued"
@@ -437,39 +400,6 @@ const choiceLabel: Record<string, string> = {
   }
 }
 
-.composer__approval {
-  position: relative;
-  isolation: isolate;
-  border: 1px solid color-mix(in srgb, var(--color-warning) 22%, var(--color-border));
-  border-radius: 1.25rem;
-  background: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
-  box-shadow: var(--shadow-composer);
-  padding: 0.75rem;
-  pointer-events: auto;
-}
-
-.composer__approval-title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--color-text-strong);
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.composer__approval-body {
-  margin: 0.5rem 0 0;
-  max-height: 8.5rem;
-  overflow-x: hidden;
-  overflow-y: auto;
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 .composer__queued {
   display: flex;
   flex-direction: column;
@@ -508,13 +438,6 @@ const choiceLabel: Record<string, string> = {
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.composer__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
 }
 
 .composer__images {

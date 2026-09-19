@@ -98,7 +98,7 @@ watch(keyboardInset, () => {
   if (stickToBottom.value) scrollToBottom()
 })
 
-watch(() => chat.approval.value?.request_id || chat.approval.value, () => {
+watch(() => chat.approval.value?.request_id || chat.approval.value || chat.clarify.value?.requestId || chat.sudo.value?.requestId, () => {
   void followBottom(true)
 })
 
@@ -156,7 +156,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        v-else-if="!chat.messages.value.length && !chat.liveHint.value"
+        v-else-if="!chat.messages.value.length && !chat.liveHint.value && !chat.clarify.value && !chat.approval.value"
         class="chat-empty"
       >
         <div class="chat-empty__logo">
@@ -182,6 +182,8 @@ onBeforeUnmount(() => {
           v-memo="chatBubbleMemo(message)"
           :message="message"
         />
+        <ChatClarifyCard v-if="chat.clarify.value" />
+        <ChatApprovalCard />
         <p
           v-if="chat.providerWait.value"
           class="chat-pane__hint"
@@ -204,6 +206,7 @@ onBeforeUnmount(() => {
     >
       <ChatComposer />
     </div>
+    <ChatSudoCard />
   </div>
 </template>
 

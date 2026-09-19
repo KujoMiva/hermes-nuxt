@@ -1,3 +1,5 @@
+import { JSON_RPC_METHOD_NOT_FOUND, jsonRpcKind, type JsonRpcFrame, type JsonRpcId } from './jsonRpc'
+
 export type ConnectionState = 'idle' | 'connecting' | 'open' | 'closed' | 'error'
 
 export interface GatewayEvent<P = unknown> {
@@ -6,13 +8,13 @@ export interface GatewayEvent<P = unknown> {
   type: string
 }
 
-interface JsonRpcFrame {
-  error?: { code?: number, message?: string }
-  id?: number | string | null
-  method?: string
-  params?: GatewayEvent
-  result?: unknown
+export type GatewayServerRequest = {
+  id: JsonRpcId
+  method: string
+  params?: unknown
 }
+
+type ServerRequestHandler = (request: GatewayServerRequest) => boolean
 
 type PendingCall = {
   reject: (error: Error) => void
@@ -44,6 +46,8 @@ export class JsonRpcGatewayClient {
   private nextId = 0
   private readonly eventHandlers = new Map<string, Set<(event: GatewayEvent) => void>>()
   private readonly pending = new Map<string | number, PendingCall>()
+  private readonly requestHandlers = new Set<ServerRequestHandler>()
+  private readonly inbound = new Set<JsonRpcId>()
   private readonly stateHandlers = new Set<(state: ConnectionState) => void>()
   private socket: WebSocket | null = null
   private state: ConnectionState = 'idle'
@@ -198,6 +202,31 @@ export class JsonRpcGatewayClient {
     return () => this.stateHandlers.delete(handler)
   }
 
+  onRequest(handler: ServerRequestHandler): () => void {
+    this.requestHandlers.add(handler)
+    return () => this.requestHandlers.delete(handler)
+  }
+
+  acceptRequest(id: JsonRpcId): void {
+    this.inbound.add(id)
+  }
+
+  forgetRequest(id: JsonRpcId): boolean {
+    return this.inbound.delete(id)
+  }
+
+  respond(id: JsonRpcId, result: unknown): boolean {
+    if (!this.inbound.has(id)) return false
+    this.inbound.delete(id)
+    return this.sendFrame({ jsonrpc: '2.0', id, result })
+  }
+
+  respondError(id: JsonRpcId, message: string, code = JSON_RPC_METHOD_NOT_FOUND): boolean {
+    if (!this.inbound.has(id)) return false
+    this.inbound.delete(id)
+    return this.sendFrame({ jsonrpc: '2.0', id, error: { code, message } })
+  }
+
   request<T>(method: string, params: Record<string, unknown> = {}, timeoutMs = 120_000): Promise<T> {
     const socket = this.socket
 
@@ -241,35 +270,62 @@ export class JsonRpcGatewayClient {
       return
     }
 
-    if (frame.id !== undefined && frame.id !== null) {
+    const kind = jsonRpcKind(frame)
+
+    if (kind === 'request' && frame.method && frame.id !== undefined && frame.id !== null) {
+      this.dispatchRequest({ id: frame.id, method: frame.method, params: frame.params })
+      return
+    }
+
+    if (kind === 'response' && frame.id !== undefined && frame.id !== null) {
       const pending = this.pending.get(frame.id)
-
-      if (!pending) {
-        return
-      }
-
+      if (!pending) return
       this.clearPending(frame.id)
-
       if (frame.error) {
         pending.reject(new JsonRpcGatewayError(frame.error.message || 'Hermes RPC 失败', frame.error.code))
       } else {
         pending.resolve(frame.result)
       }
-
       return
     }
 
-    if (frame.method === 'event' && frame.params?.type) {
-      if (frame.params.type === 'gateway.ready') {
-        const payload = frame.params.payload as { heartbeat?: unknown } | undefined
-
+    if (frame.method === 'event') {
+      const event = frame.params as GatewayEvent | undefined
+      if (!event?.type) return
+      if (event.type === 'gateway.ready') {
+        const payload = event.payload as { heartbeat?: unknown } | undefined
         if (payload?.heartbeat === true && this.socket) {
           this.inboundAt = Date.now()
           this.startHeartbeat(this.socket)
         }
       }
+      this.dispatch(event)
+    }
+  }
 
-      this.dispatch(frame.params)
+  private dispatchRequest(request: GatewayServerRequest): void {
+    this.inbound.add(request.id)
+    let handled = false
+    for (const handler of this.requestHandlers) {
+      try {
+        if (handler(request)) handled = true
+      } catch {
+        // a bad handler must not block the rest of the queue
+      }
+    }
+    if (!handled && this.inbound.has(request.id)) {
+      this.respondError(request.id, `Method not found: ${request.method}`)
+    }
+  }
+
+  private sendFrame(frame: Record<string, unknown>): boolean {
+    const socket = this.socket
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false
+    try {
+      socket.send(JSON.stringify(frame))
+      return true
+    } catch {
+      return false
     }
   }
 
@@ -350,6 +406,7 @@ export class JsonRpcGatewayClient {
   }
 
   private rejectAll(error: Error): void {
+    this.inbound.clear()
     for (const [id, pending] of this.pending) {
       if (pending.timer) {
         clearTimeout(pending.timer)

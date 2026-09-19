@@ -111,11 +111,33 @@ export interface ChatToolEvent {
 
 export interface ChatApproval {
   request_id?: string
+  server_request_id?: string | number
   command?: string
   tool_name?: string
   choices?: string[]
   smart_denied?: boolean
   [key: string]: unknown
+}
+
+export interface ChatClarifyQuestion {
+  qid: string
+  question: string
+  choices?: string[] | null
+  multiSelect?: boolean
+}
+
+export interface ChatClarify {
+  requestId: string | number
+  question: string
+  choices: string[] | null
+  multiSelect: boolean
+  questions?: ChatClarifyQuestion[]
+  lockedAnswers?: Record<string, string>
+}
+
+export interface ChatSudo {
+  requestId: string | number
+  command: string
 }
 
 export type ChatStopKind = 'stopping' | 'user_stop' | 'cancelled' | 'interrupted' | 'disconnected'
