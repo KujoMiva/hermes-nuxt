@@ -93,23 +93,37 @@ function positionMenu() {
   const spaceAbove = rect.top - gutter
   const openUp = spaceBelow < 10.5 * 16 && spaceAbove > spaceBelow
   const available = Math.max(7.5 * 16, openUp ? spaceAbove : spaceBelow)
-  let left = rect.left
-  if (left + rect.width > window.innerWidth - gutter) {
-    left = Math.max(gutter, window.innerWidth - gutter - rect.width)
+  const maxW = Math.min(22 * 16, window.innerWidth - gutter * 2)
+  const place = (width: number) => {
+    let left = rect.left
+    if (left + width > window.innerWidth - gutter) {
+      left = Math.max(gutter, window.innerWidth - gutter - width)
+    }
+    if (left < gutter) left = gutter
+    return {
+      position: 'fixed',
+      left: `${left}px`,
+      minWidth: `${rect.width}px`,
+      maxWidth: `${maxW}px`,
+      maxHeight: `${Math.min(maxH, available)}px`,
+      zIndex: '100',
+      ...(openUp
+        ? { bottom: `${window.innerHeight - rect.top + 6}px`, top: 'auto' }
+        : { top: `${rect.bottom + 6}px`, bottom: 'auto' })
+    }
   }
-  if (left < gutter) left = gutter
 
-  menuStyle.value = {
-    position: 'fixed',
-    left: `${left}px`,
-    width: `${Math.max(rect.width, 7.5 * 16)}px`,
-    maxWidth: `${window.innerWidth - gutter * 2}px`,
-    maxHeight: `${Math.min(maxH, available)}px`,
-    zIndex: '100',
-    ...(openUp
-      ? { bottom: `${window.innerHeight - rect.top + 6}px`, top: 'auto' }
-      : { top: `${rect.bottom + 6}px`, bottom: 'auto' })
+  if (!menu.value) {
+    menuStyle.value = { ...place(rect.width), width: 'max-content' }
+    return
   }
+
+  const previousWidth = menu.value.style.width
+  menu.value.style.width = 'max-content'
+  const width = Math.min(maxW, Math.max(rect.width, Math.ceil(menu.value.scrollWidth)))
+  menu.value.style.width = previousWidth
+
+  menuStyle.value = { ...place(width), width: `${width}px` }
 }
 
 function scrollActive() {
