@@ -71,6 +71,7 @@ export default defineNuxtConfig({
       icons: [
         'lucide:arrow-up',
         'lucide:check',
+        'lucide:chevron-down',
         'lucide:copy',
         'lucide:eye',
         'lucide:eye-off',

@@ -453,19 +453,23 @@ function fetchErrorMessage(caught: unknown): string {
     width: auto;
     min-width: 6.75rem;
     flex: 0 0 auto;
+  }
+
+  :deep(.ui-select__trigger) {
     min-height: 2.5rem;
     border: 0;
     border-right: 1px solid var(--color-border);
     border-radius: 0;
-    appearance: none;
-    background-color: var(--color-bg);
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237d899c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
-    background-repeat: no-repeat;
-    background-position: right 0.5rem center;
-    background-size: 0.9rem;
-    padding: 0 1.55rem 0 0.75rem;
+    background: var(--color-bg);
+    padding: 0 0.5rem 0 0.75rem;
     font-size: 0.875rem;
-    cursor: pointer;
+
+    &:hover:not(:disabled),
+    &:focus-visible,
+    &.is-open {
+      background: var(--color-bg);
+      border-right-color: var(--color-border);
+    }
   }
 
   :deep(.ui-input-wrap) {

@@ -115,6 +115,12 @@ function setKind(kind: ScheduleKind) {
   }
 }
 
+function onIntervalUnit(value: string) {
+  if (value === 'm' || value === 'h' || value === 'd') {
+    form.schedule.intervalUnit = value
+  }
+}
+
 function catalogNames() {
   return catalog.value
     .map(item => item.name?.trim())
@@ -321,15 +327,12 @@ const profileLabel = computed(() => profiles.currentName.value || props.job?._pr
               type="number"
               min="1"
             >
-            <select v-model="form.schedule.intervalUnit">
-              <option
-                v-for="item in INTERVAL_UNITS"
-                :key="item.value"
-                :value="item.value"
-              >
-                {{ item.label }}
-              </option>
-            </select>
+            <UiSelect
+              :model-value="form.schedule.intervalUnit"
+              :items="INTERVAL_UNITS"
+              aria-label="间隔单位"
+              @update:model-value="onIntervalUnit"
+            />
           </div>
         </label>
         <label
@@ -539,9 +542,7 @@ const profileLabel = computed(() => profiles.currentName.value || props.job?._pr
     padding: 0.35rem 0;
   }
 
-  input,
-  select,
-  :deep(.ui-select) {
+  input {
     width: 100%;
     min-height: 2.35rem;
     border: 0;
@@ -555,7 +556,26 @@ const profileLabel = computed(() => profiles.currentName.value || props.job?._pr
   }
 
   :deep(.ui-select) {
-    padding-inline: 0;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  :deep(.ui-select__trigger) {
+    min-height: 2.35rem;
+    border: 0;
+    border-bottom: 1px solid var(--color-border);
+    border-radius: 0;
+    background: transparent;
+    padding: 0.35rem 0;
+
+    &:hover:not(:disabled),
+    &:focus-visible,
+    &.is-open {
+      background: transparent;
+      border-bottom-color: var(--color-inverted);
+    }
   }
 }
 
