@@ -546,12 +546,12 @@
   flex-shrink: 0;
   border: 0;
   border-radius: var(--radius-pill);
-  background: #d4d4d8;
+  background: var(--color-accented);
   padding: 0;
   transition: background 0.16s ease;
 
   &.is-on {
-    background: #34c759;
+    background: var(--color-inverted);
   }
 
   &.is-disabled {
@@ -567,10 +567,11 @@
     border-radius: 50%;
     background: #fff;
     box-shadow: 0 1px 3px rgb(15 15 20 / 22%);
-    transition: transform 0.16s ease;
+    transition: transform 0.16s ease, background 0.16s ease;
   }
 
   &.is-on &__thumb {
+    background: var(--color-text-invert);
     transform: translateX(1.05rem);
   }
 }
