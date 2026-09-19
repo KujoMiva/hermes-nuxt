@@ -1,6 +1,11 @@
 import type { HermesSession } from '~/types/hermes'
+import { visibleArchivedSessions, visibleChatSessions } from '~/utils/sessionGroups'
+import { mergeSessionSearch, searchHitToSession } from '~/utils/sessionSearch'
 
 const PIN_STORE = 'hermes-pinned-ids'
+const SEARCH_DEBOUNCE_MS = 200
+
+let searchWatchBound = false
 
 function asSession(row: unknown): HermesSession | null {
   if (!row || typeof row !== 'object') return null
@@ -57,13 +62,25 @@ function applyPins(list: HermesSession[], pins: string[]) {
     })
 }
 
+function uniqueSessions(rows: HermesSession[]) {
+  const seen = new Set<string>()
+  const out: HermesSession[] = []
+  for (const item of rows) {
+    if (seen.has(item.id)) continue
+    seen.add(item.id)
+    out.push(item)
+  }
+  return out
+}
+
 export function useSessions() {
   const gateway = useGateway()
+  const dashboard = useDashboardApi()
   const { isConfigured } = useConnection()
   const toast = useToast()
 
   const items = useState<HermesSession[]>('hermes-sessions', () => [])
-  const hits = useState<HermesSession[]>('hermes-session-hits', () => [])
+  const serverHits = useState<HermesSession[]>('hermes-session-server-hits', () => [])
   const hitsQuery = useState('hermes-session-hits-query', () => '')
   const loading = useState('hermes-sessions-loading', () => false)
   const loadingMore = useState('hermes-sessions-loading-more', () => false)
@@ -78,35 +95,38 @@ export function useSessions() {
   const archiveFromApi = useState('hermes-sessions-archived-from-api', () => true)
   const pins = useState<string[]>('hermes-session-pins', () => [])
 
+  const searchPool = computed(() => uniqueSessions([
+    ...visibleChatSessions(items.value),
+    ...visibleArchivedSessions(archivedItems.value)
+  ]))
+
   const filtered = computed(() => {
-    const needle = query.value.trim().toLowerCase()
-    const rows = source.value
+    const needle = query.value.trim()
+    if (needle) return mergeSessionSearch(searchPool.value, serverHits.value, needle)
+    return source.value
       ? items.value.filter(item => (item.source || '') === source.value)
       : items.value
-    if (!needle) return rows
-    return rows.filter(item =>
-      [item.title, item.preview, item.id, item.model, item.source]
-        .some(value => String(value || '').toLowerCase().includes(needle))
-    )
   })
 
   const archivedFiltered = computed(() => {
-    const needle = query.value.trim().toLowerCase()
-    if (!needle) return archivedItems.value
-    return archivedItems.value.filter(item =>
-      [item.title, item.preview, item.id].some(value => String(value || '').toLowerCase().includes(needle))
-    )
+    if (query.value.trim()) return []
+    return archivedItems.value
   })
+
+  const hits = computed(() => query.value.trim() ? filtered.value : [])
 
   function find(id: string) {
     return items.value.find(item => item.id === id)
       || archivedItems.value.find(item => item.id === id)
+      || serverHits.value.find(item => item.id === id)
       || null
   }
 
   async function refresh() {
     if (!isConfigured.value) {
       items.value = []
+      serverHits.value = []
+      searching.value = false
       loading.value = false
       return
     }
@@ -190,6 +210,7 @@ export function useSessions() {
     await gateway.request('session.delete', { session_id: id })
     items.value = items.value.filter(item => item.id !== id)
     archivedItems.value = archivedItems.value.filter(item => item.id !== id)
+    serverHits.value = serverHits.value.filter(item => item.id !== id)
   }
 
   async function archive(id: string, hidden = true) {
@@ -229,11 +250,50 @@ export function useSessions() {
     else items.value = applyPins([row, ...items.value], pins.value)
   }
 
-  watch(query, (value) => {
-    hitsQuery.value = value
-    hits.value = filtered.value
-    searching.value = false
-  })
+  if (import.meta.client && !searchWatchBound) {
+    searchWatchBound = true
+    let timer = 0
+    let token = 0
+
+    watch(query, (value) => {
+      const needle = value.trim()
+      hitsQuery.value = needle
+      window.clearTimeout(timer)
+      if (!needle) {
+        token += 1
+        serverHits.value = []
+        searching.value = false
+        return
+      }
+      searching.value = true
+      timer = window.setTimeout(() => {
+        const requestToken = ++token
+        void (async () => {
+          if (!isConfigured.value) {
+            if (requestToken === token) {
+              serverHits.value = []
+              searching.value = false
+            }
+            return
+          }
+          try {
+            const payload = await dashboard.request<{ results?: unknown[] }>('sessions/search', {
+              query: { q: needle, limit: 20 }
+            })
+            if (requestToken !== token) return
+            serverHits.value = (payload.results || [])
+              .map(searchHitToSession)
+              .filter((row): row is HermesSession => Boolean(row))
+          } catch {
+            if (requestToken !== token) return
+            serverHits.value = []
+          } finally {
+            if (requestToken === token) searching.value = false
+          }
+        })()
+      }, SEARCH_DEBOUNCE_MS)
+    })
+  }
 
   return {
     archive,

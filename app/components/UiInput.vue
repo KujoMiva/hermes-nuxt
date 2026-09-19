@@ -6,6 +6,7 @@ defineProps<{
   modelValue?: string
   type?: string
   placeholder?: string
+  spin?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -22,6 +23,7 @@ const emit = defineEmits<{
       v-if="icon"
       :name="icon"
       :size="16"
+      :spin="spin"
     />
     <input
       class="ui-input"

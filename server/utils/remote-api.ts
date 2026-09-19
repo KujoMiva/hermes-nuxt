@@ -18,6 +18,7 @@ const ALLOWED: Array<{ method: string, pattern: RegExp, timeoutMs?: number }> = 
   { method: 'PUT', pattern: /^\/api\/env$/ },
   { method: 'DELETE', pattern: /^\/api\/env$/ },
   { method: 'POST', pattern: /^\/api\/env\/reveal$/ },
+  { method: 'GET', pattern: /^\/api\/sessions\/search$/ },
   { method: 'GET', pattern: /^\/api\/providers\/custom-endpoints$/ },
   { method: 'POST', pattern: /^\/api\/providers\/custom-endpoints$/ },
   { method: 'POST', pattern: /^\/api\/providers\/custom-endpoints\/validate$/, timeoutMs: 20_000 },

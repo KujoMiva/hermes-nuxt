@@ -52,16 +52,24 @@ function openMenu(item: HermesSession) {
   menuOpen.value = true
 }
 
+const isSearching = computed(() => Boolean(sessions.query.value.trim()))
+
 const canLoadMore = computed(() => {
-  return sessions.hasMore.value && !sessions.query.value.trim()
+  return sessions.hasMore.value && !isSearching.value
 })
 
 const canLoadMoreArchived = computed(() => {
-  return sessions.archiveHasMore.value && !sessions.query.value.trim()
+  return sessions.archiveHasMore.value && !isSearching.value
 })
 
 const archivedSessions = computed(() => {
   return visibleArchivedSessions(sessions.archivedFiltered.value)
+})
+
+const searchHint = computed(() => {
+  if (sessions.searching.value) return '全库搜索中'
+  const count = sessions.filtered.value.length
+  return count ? `${count} 个会话` : '无匹配'
 })
 
 function isExpanded(id: string) {
@@ -174,7 +182,10 @@ watch(() => route.params.id, (id) => {
         />
       </div>
     </div>
-    <SidebarSearch v-model="sessions.query.value" />
+    <SidebarSearch
+      v-model="sessions.query.value"
+      :searching="sessions.searching.value"
+    />
 
     <div class="sidebar__body">
       <nav class="sidebar__nav">
@@ -194,42 +205,59 @@ watch(() => route.params.id, (id) => {
       </nav>
 
       <SidebarSessionGroup
-        v-for="space in workspaces"
-        :key="space.id"
-        :label="space.label"
-        :hint="space.hint"
-        :icon="space.icon"
-        :expanded="isExpanded(space.id)"
-        :sessions="space.sessions"
+        v-if="isSearching"
+        label="搜索结果"
+        :hint="searchHint"
+        icon="i-lucide-search"
+        :expanded="true"
+        :sessions="sessions.filtered.value"
         :active-id="String(route.params.id || '')"
-        :fill="space.id === 'home'"
+        fill
         :show-pin="true"
         :empty-text="homeEmptyText"
-        :show-load-more="space.id === 'home' && canLoadMore"
-        :loading-more="sessions.loadingMore.value"
-        @toggle="toggleWorkspace(space.id)"
         @open="openSession"
         @menu="openMenu"
-        @load-more="sessions.loadMore()"
       />
 
-      <SidebarSessionGroup
-        label="归档箱"
-        :hint="archivedSessions.length ? `${archivedSessions.length} 个会话` : '已归档'"
-        icon="i-lucide-archive"
-        :expanded="isExpanded('archive')"
-        :sessions="archivedSessions"
-        :active-id="String(route.params.id || '')"
-        docked
-        :show-pin="false"
-        :empty-text="archiveEmptyText"
-        :show-load-more="canLoadMoreArchived"
-        :loading-more="sessions.loadingMoreArchived.value"
-        @toggle="toggleWorkspace('archive')"
-        @open="openSession"
-        @menu="openMenu"
-        @load-more="sessions.loadMoreArchived()"
-      />
+      <template v-else>
+        <SidebarSessionGroup
+          v-for="space in workspaces"
+          :key="space.id"
+          :label="space.label"
+          :hint="space.hint"
+          :icon="space.icon"
+          :expanded="isExpanded(space.id)"
+          :sessions="space.sessions"
+          :active-id="String(route.params.id || '')"
+          :fill="space.id === 'home'"
+          :show-pin="true"
+          :empty-text="homeEmptyText"
+          :show-load-more="space.id === 'home' && canLoadMore"
+          :loading-more="sessions.loadingMore.value"
+          @toggle="toggleWorkspace(space.id)"
+          @open="openSession"
+          @menu="openMenu"
+          @load-more="sessions.loadMore()"
+        />
+
+        <SidebarSessionGroup
+          label="归档箱"
+          :hint="archivedSessions.length ? `${archivedSessions.length} 个会话` : '已归档'"
+          icon="i-lucide-archive"
+          :expanded="isExpanded('archive')"
+          :sessions="archivedSessions"
+          :active-id="String(route.params.id || '')"
+          docked
+          :show-pin="false"
+          :empty-text="archiveEmptyText"
+          :show-load-more="canLoadMoreArchived"
+          :loading-more="sessions.loadingMoreArchived.value"
+          @toggle="toggleWorkspace('archive')"
+          @open="openSession"
+          @menu="openMenu"
+          @load-more="sessions.loadMoreArchived()"
+        />
+      </template>
     </div>
 
     <div class="sidebar__footer">
