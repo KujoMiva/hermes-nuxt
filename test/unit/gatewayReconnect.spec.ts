@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  shouldDeferDraftSubmit,
   shouldDropSocketAfterPingFailure,
   shouldReconnectOnResume,
   shouldReplaceTranscriptOnRebind,
@@ -96,14 +95,6 @@ describe('shouldVerifyOpenSocket', () => {
   it('pings before using a socket that went quiet', () => {
     expect(shouldVerifyOpenSocket(22_000, 30_000)).toBe(true)
     expect(shouldVerifyOpenSocket(29_000, 30_000)).toBe(false)
-  })
-})
-
-describe('shouldDeferDraftSubmit', () => {
-  it('submits after navigating off the empty new-chat route', () => {
-    expect(shouldDeferDraftSubmit('/', '20260919_abc')).toBe(true)
-    expect(shouldDeferDraftSubmit('/chat/20260919_abc', '20260919_abc')).toBe(false)
-    expect(shouldDeferDraftSubmit('/', '')).toBe(false)
   })
 })
 

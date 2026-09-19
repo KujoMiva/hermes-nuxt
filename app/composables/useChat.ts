@@ -24,10 +24,7 @@ import {
   visibleUserOrdinal
 } from '~/utils/chatEdit'
 import { chatUid, sleep } from '~/utils/chatRun'
-import {
-  shouldDeferDraftSubmit,
-  shouldReplaceTranscriptOnRebind
-} from '~/utils/gatewayReconnect'
+import { shouldReplaceTranscriptOnRebind } from '~/utils/gatewayReconnect'
 import { isGenericModel } from '~/composables/useModelCatalog'
 import { isBusySessionModelSwitch, sessionModelSetValue } from '~/utils/modelSettings'
 import { isSubagentTool, isToolResultFailed } from '~/utils/toolRun'
@@ -638,23 +635,9 @@ export function useChatController() {
     errorText.value = ''
     userStopped.value = false
     turnStopKind.value = ''
-    const pending = usePendingPrompt()
     let queued = false
     try {
       const sid = await ensureDraft()
-      const route = useRoute()
-      const stored = storedSessionId.value
-      if (shouldDeferDraftSubmit(route.path, stored)) {
-        pending.value = { text: trimmed, images: imageSrcs }
-        try {
-          await navigateTo(`/chat/${stored}`)
-        } catch (error) {
-          pending.value = null
-          throw error
-        }
-        return
-      }
-
       messages.value = [...messages.value, {
         id: chatUid('u'),
         role: 'user',
@@ -665,8 +648,9 @@ export function useChatController() {
       queued = true
       status.value = 'submitted'
       bindEvents()
-      await gateway.request('prompt.submit', { session_id: sid, text: trimmed })
+      const submitted = gateway.request('prompt.submit', { session_id: sid, text: trimmed })
       await openStoredChat()
+      await submitted
     } catch (error) {
       if (queued) {
         status.value = 'ready'
@@ -679,10 +663,9 @@ export function useChatController() {
   }
 
   async function openStoredChat() {
-    const route = useRoute()
     const stored = storedSessionId.value
-    if (stored && route.path === '/') {
-      await sessions.refresh()
+    if (stored && useRoute().path === '/') {
+      void sessions.refresh()
       await navigateTo(`/chat/${stored}`)
     }
   }

@@ -2,6 +2,7 @@
 import { chatBubbleMemo } from '~/utils/sessionMessages'
 
 const chat = useChatController()
+const pending = usePendingPrompt()
 const { inset: keyboardInset, sync: syncVisualViewport } = useVisualViewport()
 const viewport = ref<HTMLElement | null>(null)
 const threadEl = ref<HTMLElement | null>(null)
@@ -82,8 +83,20 @@ function onComposerFocusIn() {
   void followBottom(true)
 }
 
+async function flushPendingPrompt() {
+  const next = pending.value
+  if (!next || chat.busy.value) return
+  pending.value = null
+  try {
+    await chat.send(next.text, next.images)
+  } catch {
+    // send() already recorded the error for the chat pane
+  }
+}
+
 onMounted(() => {
   followBottom(true)
+  void flushPendingPrompt()
 })
 
 onBeforeUnmount(() => {

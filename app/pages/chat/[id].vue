@@ -18,23 +18,34 @@ async function flushPending() {
   }
 }
 
-onMounted(async () => {
-  const id = String(route.params.id || '')
-  if (!id) return
+async function bindRoute(id: string) {
   if (chat.isActiveId(id)) {
     await flushPending()
     return
   }
   pending.value = null
   await chat.loadSession(id)
+}
+
+onMounted(async () => {
+  const id = String(route.params.id || '')
+  if (!id) return
+  await bindRoute(id)
+})
+
+onActivated(async () => {
+  const id = String(route.params.id || '')
+  if (!id) return
+  if (chat.isActiveId(id)) {
+    await flushPending()
+    return
+  }
+  await bindRoute(id)
 })
 
 watch(() => route.params.id, async (id) => {
   if (!id) return
-  const sid = String(id)
-  if (chat.isActiveId(sid)) return
-  pending.value = null
-  await chat.loadSession(sid)
+  await bindRoute(String(id))
 })
 </script>
 
